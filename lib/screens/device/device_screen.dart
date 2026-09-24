@@ -13,9 +13,11 @@ class DeviceScreen extends StatefulWidget {
 
 class _DeviceScreenState extends State<DeviceScreen> {
   bool _isScanning = false;
+  bool _hideUnknown = true; // За замовчуванням ховаємо пристрої без імені
   List<ScanResult> _scanResults = [];
+  List<BluetoothDevice> _systemDevices = [];
   StreamSubscription<List<ScanResult>>? _scanSubscription;
-  
+
   BluetoothDevice? _connectedDevice;
   bool _isConnected = false;
   String _connectedDeviceName = "Не підключено";
@@ -25,6 +27,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchSystemDevices();
     _startScan();
   }
 
@@ -34,7 +37,19 @@ class _DeviceScreenState extends State<DeviceScreen> {
     super.dispose();
   }
 
-  // Запуск реального сканування BLE пристроїв навколо
+  // Отримання підключених/спарених у системі Android пристроїв (годинники, навушники)
+  Future<void> _fetchSystemDevices() async {
+    try {
+      final bonded = await FlutterBluePlus.systemDevices([]);
+      if (mounted) {
+        setState(() {
+          _systemDevices = bonded;
+        });
+      }
+    } catch (_) {}
+  }
+
+  // Запуск BLE сканування
   void _startScan() async {
     if (_isScanning) return;
 
@@ -43,7 +58,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
       _scanResults.clear();
     });
 
-    // Підписуємося на реальний потік знайдених BLE пристроїв
+    await _fetchSystemDevices();
+
     _scanSubscription?.cancel();
     _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
       if (mounted) {
@@ -54,7 +70,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
     });
 
     try {
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 8));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -68,24 +84,24 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
-  // Підключення до реального пристрою
-  Future<void> _connectToDevice(BluetoothDevice device) async {
-    final name = device.platformName.isNotEmpty ? device.platformName : device.remoteId.str;
-    
+  Future<void> _connectToDevice(BluetoothDevice device, String name) async {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Підключення до $name..."), backgroundColor: kCyanColor),
     );
 
     try {
       await device.connect(timeout: const Duration(seconds: 8));
-      final rssi = await device.readRssi();
+      int rssi = -60;
+      try {
+        rssi = await device.readRssi();
+      } catch (_) {}
 
       setState(() {
         _connectedDevice = device;
         _isConnected = true;
         _connectedDeviceName = name;
         _rssi = rssi;
-        _pingMs = 14; // Базовий ping після встановлення з'єднання
+        _pingMs = 12;
       });
 
       if (mounted) {
@@ -102,7 +118,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
-  // Відключення від пристрою
   Future<void> _disconnectDevice() async {
     if (_connectedDevice != null) {
       await _connectedDevice!.disconnect();
@@ -123,7 +138,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
-  // Замір реального пінгу (Latency test через RSSI read)
   Future<void> _measurePing() async {
     if (!_isConnected || _connectedDevice == null) return;
 
@@ -146,7 +160,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
           ),
         );
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Помилка заміру пінгу"), backgroundColor: kRedColor),
@@ -155,8 +169,22 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
+  String _getDeviceName(ScanResult res) {
+    if (res.device.platformName.isNotEmpty) return res.device.platformName;
+    if (res.advertisementData.advName.isNotEmpty) return res.advertisementData.advName;
+    if (res.advertisementData.localName.isNotEmpty) return res.advertisementData.localName;
+    return "";
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Фільтрація невідомих беконів
+    final filteredResults = _scanResults.where((r) {
+      final name = _getDeviceName(r);
+      if (_hideUnknown && name.isEmpty) return false;
+      return true;
+    }).toList();
+
     return Scaffold(
       backgroundColor: kBgColor,
       body: SafeArea(
@@ -173,7 +201,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Картка підключеного пристрою
+              // Панель підключеного пристрою
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
@@ -272,69 +300,108 @@ class _DeviceScreenState extends State<DeviceScreen> {
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text("Знайдені Bluetooth пристрої", style: TextStyle(color: kSubColor, fontSize: 14, fontWeight: FontWeight.bold)),
-                  IconButton(
-                    icon: Icon(_isScanning ? Icons.sync : Icons.refresh, color: kCyanColor),
-                    onPressed: _isScanning ? null : _startScan,
+                  const Text("Bluetooth пристрої", style: TextStyle(color: kSubColor, fontSize: 14, fontWeight: FontWeight.bold)),
+                  Row(
+                    children: [
+                      FilterChip(
+                        label: Text(_hideUnknown ? "Тільки з ім'ям" : "Усі пристрої", style: const TextStyle(fontSize: 11, color: Colors.white)),
+                        selected: _hideUnknown,
+                        onSelected: (val) => setState(() => _hideUnknown = val),
+                        selectedColor: kCyanColor.withOpacity(0.3),
+                        backgroundColor: kCardColor,
+                        checkmarkColor: kCyanColor,
+                      ),
+                      IconButton(
+                        icon: Icon(_isScanning ? Icons.sync : Icons.refresh, color: kCyanColor),
+                        onPressed: _isScanning ? null : _startScan,
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
 
-              // Реальний список усіх знайдених BLE-пристроїв
               Expanded(
-                child: _isScanning && _scanResults.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(color: kCyanColor),
-                            SizedBox(height: 12),
-                            Text("Шукаємо реальні Bluetooth пристрої...", style: TextStyle(color: kSubColor)),
-                          ],
-                        ),
-                      )
-                    : _scanResults.isEmpty
-                        ? const Center(
-                            child: Text(
-                              "Пристроїв не знайдено.\nПеревірте, чи увімкнено Bluetooth та GPS на телефоні.",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: kSubColor),
+                child: ListView(
+                  children: [
+                    // Розділ спарених у системі пристроїв (годинники, навушники)
+                    if (_systemDevices.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8, top: 4),
+                        child: Text("Спарені в Android", style: TextStyle(color: kCyanColor, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                      ..._systemDevices.map((dev) {
+                        final name = dev.platformName.isNotEmpty ? dev.platformName : "Bluetooth Device";
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(color: kCardColor, borderRadius: BorderRadius.circular(14)),
+                          child: ListTile(
+                            leading: const Icon(Icons.devices, color: kCyanColor),
+                            title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                            subtitle: Text(dev.remoteId.str, style: const TextStyle(color: kSubColor, fontSize: 12)),
+                            trailing: TextButton(
+                              onPressed: () => _connectToDevice(dev, name),
+                              child: const Text("Підключити", style: TextStyle(color: kCyanColor, fontWeight: FontWeight.bold)),
                             ),
-                          )
-                        : ListView.builder(
-                            itemCount: _scanResults.length,
-                            itemBuilder: (context, index) {
-                              final result = _scanResults[index];
-                              final device = result.device;
-                              final name = device.platformName.isNotEmpty ? device.platformName : "Unknown Device";
-                              final mac = device.remoteId.str;
-
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                decoration: BoxDecoration(
-                                  color: kCardColor,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: ListTile(
-                                  leading: const Icon(Icons.bluetooth, color: kCyanColor),
-                                  title: Text(
-                                    name,
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                                  ),
-                                  subtitle: Text("$mac  ·  ${result.rssi} dBm", style: const TextStyle(color: kSubColor, fontSize: 12)),
-                                  trailing: TextButton(
-                                    onPressed: () => _connectToDevice(device),
-                                    child: const Text("Підключити", style: TextStyle(color: kCyanColor, fontWeight: FontWeight.bold)),
-                                  ),
-                                ),
-                              );
-                            },
                           ),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                    ],
+
+                    // Розділ знайдених при скануванні BLE пристроїв
+                    if (filteredResults.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text("Знайдені поблизу", style: TextStyle(color: kSubColor, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                      ...filteredResults.map((res) {
+                        final rawName = _getDeviceName(res);
+                        final name = rawName.isNotEmpty ? rawName : "Unknown Device";
+                        final mac = res.device.remoteId.str;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(color: kCardColor, borderRadius: BorderRadius.circular(14)),
+                          child: ListTile(
+                            leading: Icon(
+                              rawName.contains("Vector") || rawName.contains("ESP32") ? Icons.developer_board : Icons.bluetooth,
+                              color: rawName.contains("Vector") ? kGreenColor : kCyanColor,
+                            ),
+                            title: Text(
+                              name,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: rawName.contains("Vector") ? FontWeight.bold : FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text("$mac  ·  ${res.rssi} dBm", style: const TextStyle(color: kSubColor, fontSize: 12)),
+                            trailing: TextButton(
+                              onPressed: () => _connectToDevice(res.device, name),
+                              child: const Text("Підключити", style: TextStyle(color: kCyanColor, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        );
+                      }),
+                    ] else if (_isScanning) ...[
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(child: CircularProgressIndicator(color: kCyanColor)),
+                      ),
+                    ] else if (_systemDevices.isEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(
+                          child: Text("Пристроїв не знайдено.\nНатисніть оновити для повторного пошуку.", textAlign: TextAlign.center, style: TextStyle(color: kSubColor)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),

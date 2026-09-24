@@ -40,7 +40,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
   // Отримання підключених/спарених у системі Android пристроїв (годинники, навушники)
   Future<void> _fetchSystemDevices() async {
     try {
-      final bonded = await FlutterBluePlus.systemDevices([]);
+      final bonded = await FlutterBluePlus.systemDevices;
       if (mounted) {
         setState(() {
           _systemDevices = bonded;

@@ -9,6 +9,19 @@ void main() {
   runApp(const MyApp());
 }
 
+// Константи кольорів нової теми
+const _bg = Color(0xFF0A0A0A);
+const _card = Color(0xFF1C1C1E);
+const _sub = Color(0xFF8E8E93);
+const _red = Color(0xFFFF3B4E);
+const _green = Color(0xFF30D158);
+const _cyan = Color(0xFF64D2FF);
+const _divider = Color(0xFF2C2C2E);
+
+final Guid nusServiceUuid = Guid("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+final Guid nusRxUuid = Guid("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
+final Guid nusTxUuid = Guid("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -18,36 +31,31 @@ class MyApp extends StatelessWidget {
       title: 'VBT Logger',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
+        scaffoldBackgroundColor: _bg,
         colorScheme: const ColorScheme.dark(
-          primary: Colors.cyanAccent,
-          surface: Color(0xFF1E1E1E),
+          primary: _cyan,
+          surface: _card,
         ),
       ),
-      home: const BleApp(),
+      home: const MainLoggerScreen(),
     );
   }
 }
 
-// ===== Nordic UART Service UUID-и =====
-// Стандарт, який підтримують готові BLE-бібліотеки для ESP32,
-// тож прошивку не доведеться підганяти під довільний формат.
-final Guid nusServiceUuid = Guid("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-final Guid nusRxUuid = Guid("6e400002-b5a3-f393-e0a9-e50e24dcca9e"); // телефон → пристрій (write)
-final Guid nusTxUuid = Guid("6e400003-b5a3-f393-e0a9-e50e24dcca9e"); // пристрій → телефон (notify)
-
-class BleApp extends StatefulWidget {
-  const BleApp({super.key});
+class MainLoggerScreen extends StatefulWidget {
+  const MainLoggerScreen({super.key});
 
   @override
-  State<BleApp> createState() => _BleAppState();
+  State<MainLoggerScreen> createState() => _MainLoggerScreenState();
 }
 
-class _BleAppState extends State<BleApp> {
+class _MainLoggerScreenState extends State<MainLoggerScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   final List<ScanResult> _scanResults = [];
   BluetoothDevice? _device;
-  BluetoothCharacteristic? _txChar; // notify
-  BluetoothCharacteristic? _rxChar; // write
+  BluetoothCharacteristic? _txChar;
+  BluetoothCharacteristic? _rxChar;
   StreamSubscription<List<int>>? _notifySub;
   StreamSubscription<BluetoothConnectionState>? _connSub;
 
@@ -55,7 +63,6 @@ class _BleAppState extends State<BleApp> {
   bool _isConnected = false;
   bool _isRecording = false;
 
-  // Записані відліки одного підходу: [мс від старту запису, сирий рядок з пристрою]
   final List<_Sample> _samples = [];
   Stopwatch? _setStopwatch;
   String _lastLine = "";
@@ -68,7 +75,6 @@ class _BleAppState extends State<BleApp> {
   }
 
   Future<void> _requestPermissions() async {
-    // Android 12+ вимагає ці дозволи в рантаймі окремо від Manifest.
     await [
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
@@ -82,14 +88,16 @@ class _BleAppState extends State<BleApp> {
       _isScanning = true;
     });
     FlutterBluePlus.scanResults.listen((results) {
-      setState(() {
-        _scanResults
-          ..clear()
-          ..addAll(results.where((r) => r.device.platformName.isNotEmpty));
-      });
+      if (mounted) {
+        setState(() {
+          _scanResults
+            ..clear()
+            ..addAll(results.where((r) => r.device.platformName.isNotEmpty));
+        });
+      }
     });
     await FlutterBluePlus.startScan(timeout: const Duration(seconds: 8));
-    setState(() => _isScanning = false);
+    if (mounted) setState(() => _isScanning = false);
   }
 
   Future<void> _connect(BluetoothDevice device) async {
@@ -97,7 +105,9 @@ class _BleAppState extends State<BleApp> {
     try {
       await device.connect(timeout: const Duration(seconds: 10));
       _connSub = device.connectionState.listen((state) {
-        setState(() => _isConnected = state == BluetoothConnectionState.connected);
+        if (mounted) {
+          setState(() => _isConnected = state == BluetoothConnectionState.connected);
+        }
         if (state == BluetoothConnectionState.disconnected) {
           _stopRecordingInternal();
         }
@@ -114,17 +124,19 @@ class _BleAppState extends State<BleApp> {
       }
 
       if (_txChar == null) {
-        _showSnackBar("На пристрої не знайдено сервіс UART. Перевір прошивку ESP32.");
+        _showSnackBar("На пристрої не знайдено сервіс UART.");
         return;
       }
 
       await _txChar!.setNotifyValue(true);
       _notifySub = _txChar!.onValueReceived.listen(_onData);
 
-      setState(() {
-        _device = device;
-        _isConnected = true;
-      });
+      if (mounted) {
+        setState(() {
+          _device = device;
+          _isConnected = true;
+        });
+      }
     } catch (e) {
       _showSnackBar("Помилка підключення: $e");
     }
@@ -132,7 +144,9 @@ class _BleAppState extends State<BleApp> {
 
   void _onData(List<int> bytes) {
     final line = String.fromCharCodes(bytes).trim();
-    setState(() => _lastLine = line);
+    if (mounted) {
+      setState(() => _lastLine = line);
+    }
     if (_isRecording && _setStopwatch != null) {
       _samples.add(_Sample(_setStopwatch!.elapsedMilliseconds, line));
     }
@@ -142,17 +156,20 @@ class _BleAppState extends State<BleApp> {
     await _notifySub?.cancel();
     await _connSub?.cancel();
     await _device?.disconnect();
-    setState(() {
-      _isConnected = false;
-      _device = null;
-      _txChar = null;
-      _rxChar = null;
-    });
+    if (mounted) {
+      setState(() {
+        _isConnected = false;
+        _device = null;
+        _txChar = null;
+        _rxChar = null;
+      });
+    }
   }
 
   Future<void> _sendCommand(String command) async {
     if (_rxChar == null) return;
     await _rxChar!.write(command.codeUnits, withoutResponse: true);
+    _showSnackBar("Команда відправлена: $command");
   }
 
   void _startSet() {
@@ -173,7 +190,9 @@ class _BleAppState extends State<BleApp> {
 
   void _stopRecordingInternal() {
     _setStopwatch?.stop();
-    setState(() => _isRecording = false);
+    if (mounted) {
+      setState(() => _isRecording = false);
+    }
   }
 
   Future<void> _saveSetToFile() async {
@@ -193,7 +212,7 @@ class _BleAppState extends State<BleApp> {
       }
       await file.writeAsString(buffer.toString());
 
-      setState(() => _lastSavedPath = path);
+      if (mounted) setState(() => _lastSavedPath = path);
       _showSnackBar("Збережено: $path (${_samples.length} відліків)");
     } catch (e) {
       _showSnackBar("Помилка збереження: $e");
@@ -202,7 +221,12 @@ class _BleAppState extends State<BleApp> {
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: _card,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 
@@ -216,141 +240,504 @@ class _BleAppState extends State<BleApp> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("VBT Logger"),
-        centerTitle: true,
-        backgroundColor: const Color(0xFF1E1E1E),
+      key: _scaffoldKey,
+      backgroundColor: _bg,
+      endDrawer: DeviceDrawer(
+        deviceName: _device?.platformName ?? "VBT Sensor",
+        isConnected: _isConnected,
+        onDisconnect: _disconnect,
+        onReconnect: () {
+          if (_device != null) _connect(_device!);
+        },
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildStatusCard(),
-            const SizedBox(height: 16),
-            if (!_isConnected) _buildScanSection(),
-            if (_isConnected) _buildRecordingSection(),
-          ],
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Верхня панель: Кнопка Меню та Статус підключення
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _device?.platformName ?? "VBT Controller",
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.4,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: _isConnected ? _green : _red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _isConnected ? "Connected" : "Disconnected",
+                        style: TextStyle(
+                          color: _isConnected ? _green : _red,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      _IconButton(
+                        icon: Icons.menu_rounded,
+                        onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Основний контент екрана
+              Expanded(
+                child: _isConnected
+                    ? _buildRecordingControls()
+                    : _buildScanSection(),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildStatusCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: _isConnected ? Colors.greenAccent : Colors.redAccent,
+  // Віджет для сканування та вибору пристрою
+  Widget _buildScanSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _isScanning ? null : _startScan,
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _divider),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(_isScanning ? Icons.sync : Icons.search_rounded, color: _cyan),
+                const SizedBox(width: 10),
+                Text(
+                  _isScanning ? "Scanning..." : "Search BLE Device",
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _scanResults.length,
+            itemBuilder: (context, i) {
+              final r = _scanResults[i];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: _card,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: ListTile(
+                  title: Text(
+                    r.device.platformName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  subtitle: Text(r.device.remoteId.str, style: const TextStyle(color: _sub)),
+                  trailing: Text("${r.rssi} dBm", style: const TextStyle(color: _cyan)),
+                  onTap: () => _connect(r.device),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Віджет керування підходом (записом)
+  Widget _buildRecordingControls() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ElevatedButton.icon(
+          onPressed: _isConnected ? () => _sendCommand("PING") : null,
+          icon: const Icon(Icons.network_check_rounded),
+          label: const Text("Ping Connection"),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.all(18),
+            backgroundColor: _card,
+            foregroundColor: _cyan,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _isRecording ? null : _startSet,
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text("Start Set"),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.all(18),
+                  backgroundColor: _green,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _isRecording ? _stopSet : null,
+                icon: const Icon(Icons.stop_rounded),
+                label: const Text("Stop Set"),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.all(18),
+                  backgroundColor: _red,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: _card,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _isRecording
+                    ? "Recording... (${_samples.length} samples)"
+                    : "Ready for next set",
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              const SizedBox(height: 10),
+              Text("Last Raw Data: $_lastLine", style: const TextStyle(fontSize: 13, color: _sub)),
+              if (_lastSavedPath != null) ...[
+                const SizedBox(height: 12),
+                Text("Saved to: $_lastSavedPath", style: const TextStyle(fontSize: 12, color: _cyan)),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Висувна бокова панель Налаштувань та Статусу
+class DeviceDrawer extends StatefulWidget {
+  final String deviceName;
+  final bool isConnected;
+  final VoidCallback onDisconnect;
+  final VoidCallback onReconnect;
+
+  const DeviceDrawer({
+    super.key,
+    required this.deviceName,
+    required this.isConnected,
+    required this.onDisconnect,
+    required this.onReconnect,
+  });
+
+  @override
+  State<DeviceDrawer> createState() => _DeviceDrawerState();
+}
+
+class _DeviceDrawerState extends State<DeviceDrawer> {
+  int _tab = 0; // 0 = Status, 1 = Settings
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      backgroundColor: _bg,
+      width: MediaQuery.of(context).size.width * 0.85,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.deviceName,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  _IconButton(
+                    icon: Icons.close_rounded,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              _TabBar(
+                selected: _tab,
+                onChanged: (i) => setState(() => _tab = i),
+              ),
+              const SizedBox(height: 20),
+              Expanded(
+                child: _tab == 0
+                    ? const _StatusPanel()
+                    : _SettingsPanel(
+                        onDisconnect: widget.onDisconnect,
+                        onReconnect: widget.onReconnect,
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _IconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _IconButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(12)),
+        child: Icon(icon, color: Colors.white, size: 20),
+      ),
+    );
+  }
+}
+
+class _TabBar extends StatelessWidget {
+  final int selected;
+  final ValueChanged<int> onChanged;
+  const _TabBar({required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _divider, width: 1))),
       child: Row(
         children: [
-          Icon(
-            _isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-            color: _isConnected ? Colors.greenAccent : Colors.redAccent,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              _isConnected
-                  ? "Підключено: ${_device?.platformName ?? 'Пристрій'}"
-                  : "Не підключено",
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ),
-          if (_isConnected)
-            IconButton(
-              icon: const Icon(Icons.close, color: Colors.redAccent),
-              onPressed: _disconnect,
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScanSection() {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ElevatedButton.icon(
-            onPressed: _isScanning ? null : _startScan,
-            icon: const Icon(Icons.search),
-            label: Text(_isScanning ? "Пошук..." : "Знайти пристрій"),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.all(16),
-              backgroundColor: Colors.cyan,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _scanResults.length,
-              itemBuilder: (context, i) {
-                final r = _scanResults[i];
-                return Card(
-                  color: const Color(0xFF1E1E1E),
-                  child: ListTile(
-                    title: Text(r.device.platformName),
-                    subtitle: Text(r.device.remoteId.str),
-                    trailing: Text("${r.rssi} dBm"),
-                    onTap: () => _connect(r.device),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecordingSection() {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ElevatedButton.icon(
-            onPressed: _isRecording ? null : _startSet,
-            icon: const Icon(Icons.fiber_manual_record),
-            label: const Text("Почати підхід"),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.all(18),
-              backgroundColor: Colors.green,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: _isRecording ? _stopSet : null,
-            icon: const Icon(Icons.stop),
-            label: const Text("Завершити підхід"),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.all(18),
-              backgroundColor: Colors.red,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            _isRecording
-                ? "Записується... ${_samples.length} відліків"
-                : "Готово до запису",
-            style: const TextStyle(fontSize: 14, color: Colors.grey),
-          ),
-          const SizedBox(height: 8),
-          Text("Останній пакет: $_lastLine", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          if (_lastSavedPath != null) ...[
-            const SizedBox(height: 12),
-            Text("Збережено: $_lastSavedPath", style: const TextStyle(fontSize: 12, color: Colors.cyanAccent)),
-          ],
+          _TabItem(text: "Status", active: selected == 0, onTap: () => onChanged(0)),
+          const SizedBox(width: 26),
+          _TabItem(text: "Settings", active: selected == 1, onTap: () => onChanged(1)),
         ],
       ),
     );
   }
 }
 
+class _TabItem extends StatelessWidget {
+  final String text;
+  final bool active;
+  final VoidCallback onTap;
+  const _TabItem({required this.text, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: active ? Colors.white : Colors.transparent, width: 2)),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: active ? Colors.white : _sub,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusPanel extends StatelessWidget {
+  const _StatusPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        const SizedBox(height: 10),
+        const Center(child: Text("Battery Level", style: TextStyle(color: _sub, fontSize: 14))),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(
+            6,
+            (i) => Container(
+              width: 36,
+              height: 8,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              decoration: BoxDecoration(color: const Color(0xFF2A2A2C), borderRadius: BorderRadius.circular(5)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 28),
+        Container(
+          decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(20)),
+          child: Column(
+            children: const [
+              _InfoRow(label: "Sensor Firmware"),
+              _Divider(),
+              _InfoRow(label: "Sensor Position"),
+              _Divider(),
+              _InfoRow(label: "Advanced Calibration"),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+  @override
+  Widget build(BuildContext context) => const Divider(height: 1, color: _divider, indent: 20, endIndent: 20);
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  const _InfoRow({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 15, color: Color(0xFFD1D1D6))),
+          const Icon(Icons.warning_rounded, color: _red, size: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsPanel extends StatelessWidget {
+  final VoidCallback onDisconnect;
+  final VoidCallback onReconnect;
+
+  const _SettingsPanel({required this.onDisconnect, required this.onReconnect});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        const _SectionLabel("Hardware Update"),
+        const _SettingsRow(icon: Icons.system_update_alt_rounded, label: "Update Device"),
+        const _SectionLabel("Calibration"),
+        const _SettingsRow(icon: Icons.tune_rounded, label: "Calibrate device"),
+        const _SectionLabel("Reconnect"),
+        _SettingsRow(
+          icon: Icons.sync_rounded,
+          label: "Reconnect",
+          onTap: onReconnect,
+        ),
+        const _SectionLabel("Disconnect device"),
+        _SettingsRow(
+          icon: Icons.power_settings_new_rounded,
+          label: "Disconnect",
+          danger: true,
+          onTap: onDisconnect,
+        ),
+      ],
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Text(text, style: const TextStyle(color: _sub, fontSize: 13)),
+    );
+  }
+}
+
+class _SettingsRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool danger;
+  final VoidCallback? onTap;
+
+  const _SettingsRow({
+    required this.icon,
+    required this.label,
+    this.danger = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? _red : Colors.white;
+    return Material(
+      color: _card,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Row(
+            children: [
+              Icon(icon, color: danger ? _red : const Color(0xFFC7C7CC), size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: color)),
+              ),
+              const Icon(Icons.chevron_right, color: Color(0xFF5A5A5E), size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 class _Sample {
   final int elapsedMs;
   final String raw;

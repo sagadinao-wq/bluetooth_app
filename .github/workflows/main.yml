@@ -21,15 +21,17 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.x'
+          flutter-version: '3.22.x'
           channel: 'stable'
 
       - name: Create Android Project Files
         run: flutter create . --platforms=android --org=com.example
 
-      - name: Fix minSdkVersion for BLE
+      - name: Configure Android SDK versions
         run: |
+          sed -i 's/compileSdkVersion .*/compileSdkVersion 34/' android/app/build.gradle
           sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle
+          sed -i 's/targetSdkVersion .*/targetSdkVersion 34/' android/app/build.gradle
 
       - name: Get dependencies
         run: flutter pub get

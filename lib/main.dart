@@ -1,309 +1,390 @@
-import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'dart:async';
 
-void main() {
-  runApp(const MyApp());
-}
+void main() => runApp(const MyApp());
 
-// Константи кольорів нової теми
+// ===== палітра, та сама що й на попередньому макеті =====
 const _bg = Color(0xFF0A0A0A);
 const _card = Color(0xFF1C1C1E);
+const _card2 = Color(0xFF232325);
 const _sub = Color(0xFF8E8E93);
 const _red = Color(0xFFFF3B4E);
-const _green = Color(0xFF30D158);
-const _cyan = Color(0xFF64D2FF);
+const _green = Color(0xFF32D74B);
 const _divider = Color(0xFF2C2C2E);
 
-final Guid nusServiceUuid = Guid("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-final Guid nusRxUuid = Guid("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
-final Guid nusTxUuid = Guid("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
+// шлях до фото береться з назви вправи; файли лежать в assets/exercises/
+const Map<String, String> _exerciseImages = {
+  'Жим': 'assets/exercises/bench.jpg',
+  'Присід': 'assets/exercises/squat.jpg',
+  'Станова': 'assets/exercises/deadlift.jpg',
+};
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'VBT Logger',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: _bg,
-        colorScheme: const ColorScheme.dark(
-          primary: _cyan,
-          surface: _card,
-        ),
-      ),
-      home: const MainLoggerScreen(),
+      theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: _bg),
+      onGenerateRoute: (settings) {
+        Widget page;
+        switch (settings.name) {
+          case '/setup':
+            page = const SetupScreen();
+            break;
+          case '/calibrate':
+            page = SetupData.of(settings.arguments);
+            break;
+          default:
+            page = const DeviceScreen();
+        }
+        return _fadeSlideRoute(page, settings);
+      },
+      initialRoute: '/',
     );
   }
 }
 
-class MainLoggerScreen extends StatefulWidget {
-  const MainLoggerScreen({super.key});
-
-  @override
-  State<MainLoggerScreen> createState() => _MainLoggerScreenState();
+Route _fadeSlideRoute(Widget page, RouteSettings settings) {
+  return PageRouteBuilder(
+    settings: settings,
+    transitionDuration: const Duration(milliseconds: 320),
+    pageBuilder: (_, __, ___) => page,
+    transitionsBuilder: (_, anim, __, child) {
+      final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
 }
 
-class _MainLoggerScreenState extends State<MainLoggerScreen> {
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+// маленький хелпер, щоб передати дані вправи/ваги в екран калібрування через onGenerateRoute
+class SetupData {
+  static Widget of(Object? args) {
+    final m = args as Map<String, dynamic>;
+    return CalibrationScreen(exercise: m['exercise'], weight: m['weight']);
+  }
+}
 
-  final List<ScanResult> _scanResults = [];
-  BluetoothDevice? _device;
-  BluetoothCharacteristic? _txChar;
-  BluetoothCharacteristic? _rxChar;
-  StreamSubscription<List<int>>? _notifySub;
-  StreamSubscription<BluetoothConnectionState>? _connSub;
+// ===== спільні дрібні віджети =====
 
-  bool _isScanning = false;
-  bool _isConnected = false;
-  bool _isRecording = false;
+class _TopBar extends StatelessWidget {
+  final String title;
+  final String? statusText;
+  final Color? statusColor;
+  const _TopBar({required this.title, this.statusText, this.statusColor});
 
-  final List<_Sample> _samples = [];
-  Stopwatch? _setStopwatch;
-  String _lastLine = "";
-  String? _lastSavedPath;
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            if (Navigator.of(context).canPop())
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: _RoundIconButton(icon: Icons.chevron_left, onTap: () => Navigator.of(context).pop()),
+              ),
+            Text(title,
+                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.3, color: Colors.white)),
+          ],
+        ),
+        if (statusText != null)
+          Row(
+            children: [
+              Container(width: 7, height: 7, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+              const SizedBox(width: 7),
+              Text(statusText!, style: TextStyle(color: statusColor, fontWeight: FontWeight.w600, fontSize: 14)),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _RoundIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _RoundIconButton({required this.icon, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _card,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: SizedBox(width: 44, height: 44, child: Icon(icon, color: Colors.white, size: 22)),
+      ),
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+  final Color color;
+  final IconData? icon;
+  const _PrimaryButton({required this.label, required this.onTap, this.color = Colors.white, this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Material(
+      color: enabled ? color : _card2,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 20, color: enabled ? Colors.black : _sub),
+                const SizedBox(width: 8),
+              ],
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700, color: enabled ? Colors.black : _sub)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===== 1. Вибір пристрою =====
+
+class DeviceScreen extends StatefulWidget {
+  const DeviceScreen({super.key});
+  @override
+  State<DeviceScreen> createState() => _DeviceScreenState();
+}
+
+class _DeviceScreenState extends State<DeviceScreen> {
+  bool _scanning = true;
+  final List<String> _found = [];
 
   @override
   void initState() {
     super.initState();
-    _requestPermissions();
-  }
-
-  Future<void> _requestPermissions() async {
-    await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
-  }
-
-  Future<void> _startScan() async {
-    setState(() {
-      _scanResults.clear();
-      _isScanning = true;
-    });
-    FlutterBluePlus.scanResults.listen((results) {
-      if (mounted) {
-        setState(() {
-          _scanResults
-            ..clear()
-            ..addAll(results.where((r) => r.device.platformName.isNotEmpty));
-        });
-      }
-    });
-    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 8));
-    if (mounted) setState(() => _isScanning = false);
-  }
-
-  Future<void> _connect(BluetoothDevice device) async {
-    await FlutterBluePlus.stopScan();
-    try {
-      await device.connect(timeout: const Duration(seconds: 10));
-      _connSub = device.connectionState.listen((state) {
-        if (mounted) {
-          setState(() => _isConnected = state == BluetoothConnectionState.connected);
-        }
-        if (state == BluetoothConnectionState.disconnected) {
-          _stopRecordingInternal();
-        }
-      });
-
-      final services = await device.discoverServices();
-      for (final s in services) {
-        if (s.uuid == nusServiceUuid) {
-          for (final c in s.characteristics) {
-            if (c.uuid == nusTxUuid) _txChar = c;
-            if (c.uuid == nusRxUuid) _rxChar = c;
-          }
-        }
-      }
-
-      if (_txChar == null) {
-        _showSnackBar("На пристрої не знайдено сервіс UART.");
-        return;
-      }
-
-      await _txChar!.setNotifyValue(true);
-      _notifySub = _txChar!.onValueReceived.listen(_onData);
-
-      if (mounted) {
-        setState(() {
-          _device = device;
-          _isConnected = true;
-        });
-      }
-    } catch (e) {
-      _showSnackBar("Помилка підключення: $e");
-    }
-  }
-
-  void _onData(List<int> bytes) {
-    final line = String.fromCharCodes(bytes).trim();
-    if (mounted) {
-      setState(() => _lastLine = line);
-    }
-    if (_isRecording && _setStopwatch != null) {
-      _samples.add(_Sample(_setStopwatch!.elapsedMilliseconds, line));
-    }
-  }
-
-  Future<void> _disconnect() async {
-    await _notifySub?.cancel();
-    await _connSub?.cancel();
-    await _device?.disconnect();
-    if (mounted) {
+    Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
       setState(() {
-        _isConnected = false;
-        _device = null;
-        _txChar = null;
-        _rxChar = null;
+        _found.addAll(['Gpath Pin — 7A:3F', 'Gpath Pin — C1:09']);
+        _scanning = false;
       });
-    }
-  }
-
-  Future<void> _sendCommand(String command) async {
-    if (_rxChar == null) return;
-    await _rxChar!.write(command.codeUnits, withoutResponse: true);
-    _showSnackBar("Команда відправлена: $command");
-  }
-
-  void _startSet() {
-    setState(() {
-      _samples.clear();
-      _setStopwatch = Stopwatch()..start();
-      _isRecording = true;
-      _lastSavedPath = null;
     });
-    _sendCommand("START");
   }
 
-  Future<void> _stopSet() async {
-    _stopRecordingInternal();
-    await _sendCommand("STOP");
-    await _saveSetToFile();
-  }
-
-  void _stopRecordingInternal() {
-    _setStopwatch?.stop();
-    if (mounted) {
-      setState(() => _isRecording = false);
-    }
-  }
-
-  Future<void> _saveSetToFile() async {
-    if (_samples.isEmpty) {
-      _showSnackBar("Підхід порожній, немає що зберігати.");
-      return;
-    }
-    try {
-      final dir = await getExternalStorageDirectory();
-      final stamp = DateTime.now().millisecondsSinceEpoch;
-      final path = "${dir?.path}/set_$stamp.csv";
-      final file = File(path);
-
-      final buffer = StringBuffer("elapsed_ms,raw\n");
-      for (final s in _samples) {
-        buffer.writeln("${s.elapsedMs},${s.raw}");
-      }
-      await file.writeAsString(buffer.toString());
-
-      if (mounted) setState(() => _lastSavedPath = path);
-      _showSnackBar("Збережено: $path (${_samples.length} відліків)");
-    } catch (e) {
-      _showSnackBar("Помилка збереження: $e");
-    }
-  }
-
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: _card,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
+  void _connect(String name) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Colors.white)),
     );
-  }
-
-  @override
-  void dispose() {
-    _notifySub?.cancel();
-    _connSub?.cancel();
-    super.dispose();
+    Timer(const Duration(milliseconds: 700), () {
+      Navigator.of(context).pop(); // закрити діалог
+      Navigator.of(context).pushNamed('/setup', arguments: {'device': name});
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      key: _scaffoldKey,
       backgroundColor: _bg,
-      endDrawer: DeviceDrawer(
-        deviceName: _device?.platformName ?? "VBT Sensor",
-        isConnected: _isConnected,
-        onDisconnect: _disconnect,
-        onReconnect: () {
-          if (_device != null) _connect(_device!);
-        },
-      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Верхня панель: Кнопка Меню та Статус підключення
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _device?.platformName ?? "VBT Controller",
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.4,
-                      color: Colors.white,
+              const _TopBar(title: "Підключення"),
+              const SizedBox(height: 8),
+              const Text("Знайдені пристрої поруч", style: TextStyle(color: _sub, fontSize: 14)),
+              const SizedBox(height: 24),
+              if (_scanning)
+                const Padding(
+                  padding: EdgeInsets.only(top: 40),
+                  child: Center(
+                    child: Column(children: [
+                      CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4),
+                      SizedBox(height: 16),
+                      Text("Пошук...", style: TextStyle(color: _sub)),
+                    ]),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: _found.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (_, i) => Material(
+                      color: _card,
+                      borderRadius: BorderRadius.circular(16),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => _connect(_found[i]),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.bluetooth_rounded, color: Colors.white, size: 20),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                  child: Text(_found[i],
+                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))),
+                              const Icon(Icons.chevron_right, color: Color(0xFF5A5A5E), size: 18),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: _isConnected ? _green : _red,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _isConnected ? "Connected" : "Disconnected",
-                        style: TextStyle(
-                          color: _isConnected ? _green : _red,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      _IconButton(
-                        icon: Icons.menu_rounded,
-                        onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-              // Основний контент екрана
-              Expanded(
-                child: _isConnected
-                    ? _buildRecordingControls()
-                    : _buildScanSection(),
+// ===== 2. Прикріпіть на штангу + вправа + вага =====
+
+class SetupScreen extends StatefulWidget {
+  const SetupScreen({super.key});
+  @override
+  State<SetupScreen> createState() => _SetupScreenState();
+}
+
+class _SetupScreenState extends State<SetupScreen> {
+  final _exercises = const ['Жим', 'Присід', 'Станова'];
+  int _selected = 0;
+  final _weightCtrl = TextEditingController(text: '60');
+
+  @override
+  Widget build(BuildContext context) {
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final device = args?['device'] as String? ?? 'Gpath Pin';
+
+    return Scaffold(
+      backgroundColor: _bg,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _TopBar(title: "Підготовка", statusText: "Підключено", statusColor: _green),
+              const SizedBox(height: 4),
+              Text(device, style: const TextStyle(color: _sub, fontSize: 13)),
+              const SizedBox(height: 28),
+
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(18)),
+                child: Row(
+                  children: const [
+                    Icon(Icons.fit_screen_rounded, color: Colors.white, size: 22),
+                    SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        "Прикріпіть пристрій на гриф штанги",
+                        style: TextStyle(fontSize: 15, color: Color(0xFFD1D1D6), height: 1.3),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 28),
+              const Text("Вправа", style: TextStyle(color: _sub, fontSize: 14)),
+              const SizedBox(height: 12),
+              Row(
+                children: List.generate(_exercises.length, (i) {
+                  final active = i == _selected;
+                  final name = _exercises[i];
+                  return Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(right: i < _exercises.length - 1 ? 10 : 0),
+                      child: Material(
+                        color: active ? Colors.white : _card,
+                        borderRadius: BorderRadius.circular(14),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () => setState(() => _selected = i),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 10, 8, 12),
+                            child: Column(
+                              children: [
+                                AspectRatio(
+                                  aspectRatio: 1,
+                                  child: Container(
+                                    decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(10)),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: ColorFiltered(
+                                      colorFilter: active
+                                          ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply)
+                                          : const ColorFilter.matrix(<double>[
+                                              0.2126, 0.7152, 0.0722, 0, 0,
+                                              0.2126, 0.7152, 0.0722, 0, 0,
+                                              0.2126, 0.7152, 0.0722, 0, 0,
+                                              0, 0, 0, 1, 0,
+                                            ]),
+                                      child: Image.asset(_exerciseImages[name]!, fit: BoxFit.contain),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(name,
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                        color: active ? Colors.black : Colors.white)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+
+              const SizedBox(height: 28),
+              const Text("Вага, кг", style: TextStyle(color: _sub, fontSize: 14)),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: TextField(
+                  controller: _weightCtrl,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                  decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 16)),
+                ),
+              ),
+
+              const Spacer(),
+              _PrimaryButton(
+                label: "Далі",
+                onTap: () {
+                  Navigator.of(context).pushNamed('/calibrate', arguments: {
+                    'exercise': _exercises[_selected],
+                    'weight': _weightCtrl.text,
+                  });
+                },
               ),
             ],
           ),
@@ -311,170 +392,227 @@ class _MainLoggerScreenState extends State<MainLoggerScreen> {
       ),
     );
   }
-
-  // Віджет для сканування та вибору пристрою
-  Widget _buildScanSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: _isScanning ? null : _startScan,
-          child: Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: _card,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _divider),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(_isScanning ? Icons.sync : Icons.search_rounded, color: _cyan),
-                const SizedBox(width: 10),
-                Text(
-                  _isScanning ? "Scanning..." : "Search BLE Device",
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _scanResults.length,
-            itemBuilder: (context, i) {
-              final r = _scanResults[i];
-              return Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                decoration: BoxDecoration(
-                  color: _card,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: ListTile(
-                  title: Text(
-                    r.device.platformName,
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  subtitle: Text(r.device.remoteId.str, style: const TextStyle(color: _sub)),
-                  trailing: Text("${r.rssi} dBm", style: const TextStyle(color: _cyan)),
-                  onTap: () => _connect(r.device),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Віджет керування підходом (записом)
-  Widget _buildRecordingControls() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ElevatedButton.icon(
-          onPressed: _isConnected ? () => _sendCommand("PING") : null,
-          icon: const Icon(Icons.network_check_rounded),
-          label: const Text("Ping Connection"),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.all(18),
-            backgroundColor: _card,
-            foregroundColor: _cyan,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _isRecording ? null : _startSet,
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: const Text("Start Set"),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.all(18),
-                  backgroundColor: _green,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _isRecording ? _stopSet : null,
-                icon: const Icon(Icons.stop_rounded),
-                label: const Text("Stop Set"),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.all(18),
-                  backgroundColor: _red,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 28),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: _card,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _isRecording
-                    ? "Recording... (${_samples.length} samples)"
-                    : "Ready for next set",
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-              const SizedBox(height: 10),
-              Text("Last Raw Data: $_lastLine", style: const TextStyle(fontSize: 13, color: _sub)),
-              if (_lastSavedPath != null) ...[
-                const SizedBox(height: 12),
-                Text("Saved to: $_lastSavedPath", style: const TextStyle(fontSize: 12, color: _cyan)),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 }
 
-// Висувна бокова панель Налаштувань та Статусу
-class DeviceDrawer extends StatefulWidget {
-  final String deviceName;
-  final bool isConnected;
-  final VoidCallback onDisconnect;
-  final VoidCallback onReconnect;
+// ===== 3. Калібрування =====
 
-  const DeviceDrawer({
-    super.key,
-    required this.deviceName,
-    required this.isConnected,
-    required this.onDisconnect,
-    required this.onReconnect,
-  });
+class CalibrationScreen extends StatefulWidget {
+  final String exercise;
+  final String weight;
+  const CalibrationScreen({super.key, required this.exercise, required this.weight});
 
   @override
-  State<DeviceDrawer> createState() => _DeviceDrawerState();
+  State<CalibrationScreen> createState() => _CalibrationScreenState();
 }
 
-class _DeviceDrawerState extends State<DeviceDrawer> {
-  int _tab = 0; // 0 = Status, 1 = Settings
+class _CalibrationScreenState extends State<CalibrationScreen> {
+  bool _calibrating = false;
+  bool _done = false;
+
+  void _calibrate() {
+    setState(() => _calibrating = true);
+    Timer(const Duration(milliseconds: 1400), () {
+      if (!mounted) return;
+      setState(() {
+        _calibrating = false;
+        _done = true;
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Drawer(
+    return Scaffold(
       backgroundColor: _bg,
-      width: MediaQuery.of(context).size.width * 0.85,
-      child: SafeArea(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _TopBar(title: "Калібрування"),
+              const SizedBox(height: 4),
+              Text("${widget.exercise} · ${widget.weight} кг", style: const TextStyle(color: _sub, fontSize: 13)),
+              const Spacer(),
+
+              Center(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: FadeTransition(opacity: anim, child: child)),
+                  child: _done
+                      ? Container(
+                          key: const ValueKey('done'),
+                          width: 120,
+                          height: 120,
+                          decoration: const BoxDecoration(color: _green, shape: BoxShape.circle),
+                          child: const Icon(Icons.check_rounded, color: Colors.black, size: 56),
+                        )
+                      : Container(
+                          key: const ValueKey('idle'),
+                          width: 120,
+                          height: 120,
+                          decoration: BoxDecoration(
+                            color: _card,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: _divider, width: 2),
+                          ),
+                          child: _calibrating
+                              ? const Padding(
+                                  padding: EdgeInsets.all(28),
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4),
+                                )
+                              : const Icon(Icons.gps_fixed_rounded, color: Colors.white, size: 44),
+                        ),
+                ),
+              ),
+
+              const SizedBox(height: 28),
+              Text(
+                _done ? "Калібровка завершена" : "Поставте штангу на підлогу або бокс і не рухайте нею",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: _done ? _green : const Color(0xFFD1D1D6),
+                    fontSize: 16,
+                    fontWeight: _done ? FontWeight.w700 : FontWeight.w400,
+                    height: 1.4),
+              ),
+
+              const Spacer(),
+              _PrimaryButton(
+                label: _done ? "Почати підхід" : (_calibrating ? "Калібрування..." : "Калібрувати"),
+                color: _done ? _green : Colors.white,
+                onTap: _calibrating
+                    ? null
+                    : (_done
+                        ? () => Navigator.of(context).push(_fadeSlideRoute(
+                              RecordingScreen(exercise: widget.exercise, weight: widget.weight),
+                              const RouteSettings(name: '/record'),
+                            ))
+                        : _calibrate),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===== 4. Запис підходу =====
+
+class RecordingScreen extends StatefulWidget {
+  final String exercise;
+  final String weight;
+  const RecordingScreen({super.key, required this.exercise, required this.weight});
+
+  @override
+  State<RecordingScreen> createState() => _RecordingScreenState();
+}
+
+class _RecordingScreenState extends State<RecordingScreen> {
+  bool _recording = false;
+  int _elapsedMs = 0;
+  int _samples = 0;
+  Timer? _timer;
+
+  void _start() {
+    setState(() {
+      _recording = true;
+      _elapsedMs = 0;
+      _samples = 0;
+    });
+    _timer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      setState(() {
+        _elapsedMs += 50;
+        _samples += 5; // імітація ~100 Гц потоку з пристрою
+      });
+    });
+  }
+
+  void _stop() {
+    _timer?.cancel();
+    setState(() => _recording = false);
+    Navigator.of(context).push(_fadeSlideRoute(
+      SummaryScreen(exercise: widget.exercise, weight: widget.weight, durationMs: _elapsedMs, samples: _samples),
+      const RouteSettings(name: '/summary'),
+    ));
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = (_elapsedMs / 1000).toStringAsFixed(1);
+    return Scaffold(
+      backgroundColor: _bg,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _TopBar(title: "Запис", statusText: _recording ? "Йде запис" : "Готово", statusColor: _recording ? _red : _sub),
+              const SizedBox(height: 4),
+              Text("${widget.exercise} · ${widget.weight} кг", style: const TextStyle(color: _sub, fontSize: 13)),
+              const SizedBox(height: 18),
+              Container(
+                height: 190,
+                width: double.infinity,
+                decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(18)),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(_exerciseImages[widget.exercise]!, fit: BoxFit.contain),
+              ),
+              const Spacer(),
+              Center(
+                child: Column(
+                  children: [
+                    Text("$seconds с",
+                        style: const TextStyle(fontSize: 52, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: -1)),
+                    const SizedBox(height: 8),
+                    Text("$_samples відліків", style: const TextStyle(color: _sub, fontSize: 15)),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              _PrimaryButton(
+                label: _recording ? "Завершити підхід" : "Почати запис",
+                color: _recording ? _red : Colors.white,
+                onTap: _recording ? _stop : _start,
+                icon: _recording ? Icons.stop_rounded : Icons.fiber_manual_record,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===== 5. Підсумок =====
+
+class SummaryScreen extends StatelessWidget {
+  final String exercise;
+  final String weight;
+  final int durationMs;
+  final int samples;
+  const SummaryScreen({
+    super.key,
+    required this.exercise,
+    required this.weight,
+    required this.durationMs,
+    required this.samples,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = (durationMs / 1000).toStringAsFixed(1);
+    return Scaffold(
+      backgroundColor: _bg,
+      body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
           child: Column(
@@ -483,36 +621,43 @@ class _DeviceDrawerState extends State<DeviceDrawer> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
-                    child: Text(
-                      widget.deviceName,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  _IconButton(
+                  const Text("Підхід завершено",
+                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Colors.white)),
+                  _RoundIconButton(
                     icon: Icons.close_rounded,
-                    onTap: () => Navigator.of(context).pop(),
+                    onTap: () => Navigator.of(context).popUntil((r) => r.settings.name == '/setup'),
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              _TabBar(
-                selected: _tab,
-                onChanged: (i) => setState(() => _tab = i),
+              const SizedBox(height: 28),
+              Container(
+                decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(20)),
+                child: Column(
+                  children: [
+                    _row("Вправа", exercise),
+                    const Divider(height: 1, color: _divider, indent: 20, endIndent: 20),
+                    _row("Вага", "$weight кг"),
+                    const Divider(height: 1, color: _divider, indent: 20, endIndent: 20),
+                    _row("Тривалість", "$seconds с"),
+                    const Divider(height: 1, color: _divider, indent: 20, endIndent: 20),
+                    _row("Відліків записано", "$samples"),
+                  ],
+                ),
               ),
-              const SizedBox(height: 20),
-              Expanded(
-                child: _tab == 0
-                    ? const _StatusPanel()
-                    : _SettingsPanel(
-                        onDisconnect: widget.onDisconnect,
-                        onReconnect: widget.onReconnect,
-                      ),
+              const SizedBox(height: 16),
+              const Text(
+                "Аналіз повторів і швидкості порахуємо пізніше — зараз зберігаються тільки сирі дані з пристрою.",
+                style: TextStyle(color: _sub, fontSize: 13, height: 1.4),
+              ),
+              const Spacer(),
+              _PrimaryButton(
+                label: "Завантажити файл",
+                icon: Icons.download_rounded,
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Файл збережено"), duration: Duration(seconds: 2)),
+                  );
+                },
               ),
             ],
           ),
@@ -520,226 +665,17 @@ class _DeviceDrawerState extends State<DeviceDrawer> {
       ),
     );
   }
-}
 
-class _IconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _IconButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(12)),
-        child: Icon(icon, color: Colors.white, size: 20),
-      ),
-    );
-  }
-}
-
-class _TabBar extends StatelessWidget {
-  final int selected;
-  final ValueChanged<int> onChanged;
-  const _TabBar({required this.selected, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: _divider, width: 1))),
-      child: Row(
-        children: [
-          _TabItem(text: "Status", active: selected == 0, onTap: () => onChanged(0)),
-          const SizedBox(width: 26),
-          _TabItem(text: "Settings", active: selected == 1, onTap: () => onChanged(1)),
-        ],
-      ),
-    );
-  }
-}
-
-class _TabItem extends StatelessWidget {
-  final String text;
-  final bool active;
-  final VoidCallback onTap;
-  const _TabItem({required this.text, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: active ? Colors.white : Colors.transparent, width: 2)),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: active ? Colors.white : _sub,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusPanel extends StatelessWidget {
-  const _StatusPanel();
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        const SizedBox(height: 10),
-        const Center(child: Text("Battery Level", style: TextStyle(color: _sub, fontSize: 14))),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            6,
-            (i) => Container(
-              width: 36,
-              height: 8,
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              decoration: BoxDecoration(color: const Color(0xFF2A2A2C), borderRadius: BorderRadius.circular(5)),
-            ),
-          ),
-        ),
-        const SizedBox(height: 28),
-        Container(
-          decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(20)),
-          child: Column(
-            children: const [
-              _InfoRow(label: "Sensor Firmware"),
-              _Divider(),
-              _InfoRow(label: "Sensor Position"),
-              _Divider(),
-              _InfoRow(label: "Advanced Calibration"),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _Divider extends StatelessWidget {
-  const _Divider();
-  @override
-  Widget build(BuildContext context) => const Divider(height: 1, color: _divider, indent: 20, endIndent: 20);
-}
-
-class _InfoRow extends StatelessWidget {
-  final String label;
-  const _InfoRow({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _row(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 15, color: Color(0xFFD1D1D6))),
-          const Icon(Icons.warning_rounded, color: _red, size: 20),
+          Text(label, style: const TextStyle(color: _sub, fontSize: 15)),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
-}
-
-class _SettingsPanel extends StatelessWidget {
-  final VoidCallback onDisconnect;
-  final VoidCallback onReconnect;
-
-  const _SettingsPanel({required this.onDisconnect, required this.onReconnect});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        const _SectionLabel("Hardware Update"),
-        const _SettingsRow(icon: Icons.system_update_alt_rounded, label: "Update Device"),
-        const _SectionLabel("Calibration"),
-        const _SettingsRow(icon: Icons.tune_rounded, label: "Calibrate device"),
-        const _SectionLabel("Reconnect"),
-        _SettingsRow(
-          icon: Icons.sync_rounded,
-          label: "Reconnect",
-          onTap: onReconnect,
-        ),
-        const _SectionLabel("Disconnect device"),
-        _SettingsRow(
-          icon: Icons.power_settings_new_rounded,
-          label: "Disconnect",
-          danger: true,
-          onTap: onDisconnect,
-        ),
-      ],
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  const _SectionLabel(this.text);
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
-      child: Text(text, style: const TextStyle(color: _sub, fontSize: 13)),
-    );
-  }
-}
-
-class _SettingsRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool danger;
-  final VoidCallback? onTap;
-
-  const _SettingsRow({
-    required this.icon,
-    required this.label,
-    this.danger = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = danger ? _red : Colors.white;
-    return Material(
-      color: _card,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          child: Row(
-            children: [
-              Icon(icon, color: danger ? _red : const Color(0xFFC7C7CC), size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: color)),
-              ),
-              const Icon(Icons.chevron_right, color: Color(0xFF5A5A5E), size: 18),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-class _Sample {
-  final int elapsedMs;
-  final String raw;
-  _Sample(this.elapsedMs, this.raw);
 }

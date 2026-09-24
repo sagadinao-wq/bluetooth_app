@@ -27,6 +27,10 @@ jobs:
       - name: Create Android Project Files
         run: flutter create . --platforms=android --org=com.example
 
+      - name: Fix minSdkVersion for BLE
+        run: |
+          sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle
+
       - name: Get dependencies
         run: flutter pub get
 

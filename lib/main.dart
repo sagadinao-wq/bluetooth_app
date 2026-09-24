@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const MyApp());
@@ -15,7 +15,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Bluetooth Controller',
+      title: 'VBT Logger',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF121212),
@@ -24,130 +24,200 @@ class MyApp extends StatelessWidget {
           surface: Color(0xFF1E1E1E),
         ),
       ),
-      home: const BluetoothApp(),
+      home: const BleApp(),
     );
   }
 }
 
-class BluetoothApp extends StatefulWidget {
-  const BluetoothApp({super.key});
+// ===== Nordic UART Service UUID-и =====
+// Стандарт, який підтримують готові BLE-бібліотеки для ESP32,
+// тож прошивку не доведеться підганяти під довільний формат.
+final Guid nusServiceUuid = Guid("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+final Guid nusRxUuid = Guid("6e400002-b5a3-f393-e0a9-e50e24dcca9e"); // телефон → пристрій (write)
+final Guid nusTxUuid = Guid("6e400003-b5a3-f393-e0a9-e50e24dcca9e"); // пристрій → телефон (notify)
+
+class BleApp extends StatefulWidget {
+  const BleApp({super.key});
 
   @override
-  State<BluetoothApp> createState() => _BluetoothAppState();
+  State<BleApp> createState() => _BleAppState();
 }
 
-class _BluetoothAppState extends State<BluetoothApp> {
-  BluetoothState _bluetoothState = BluetoothState.UNKNOWN;
-  BluetoothConnection? _connection;
-  BluetoothDevice? _selectedDevice;
+class _BleAppState extends State<BleApp> {
+  final List<ScanResult> _scanResults = [];
+  BluetoothDevice? _device;
+  BluetoothCharacteristic? _txChar; // notify
+  BluetoothCharacteristic? _rxChar; // write
+  StreamSubscription<List<int>>? _notifySub;
+  StreamSubscription<BluetoothConnectionState>? _connSub;
 
-  List<BluetoothDevice> _devicesList = [];
+  bool _isScanning = false;
   bool _isConnected = false;
   bool _isRecording = false;
-  List<String> _receivedData = [];
+
+  // Записані відліки одного підходу: [мс від старту запису, сирий рядок з пристрою]
+  final List<_Sample> _samples = [];
+  Stopwatch? _setStopwatch;
+  String _lastLine = "";
+  String? _lastSavedPath;
 
   @override
   void initState() {
     super.initState();
-    FlutterBluetoothSerial.instance.state.then((state) {
-      setState(() {
-        _bluetoothState = state;
-      });
-    });
-
-    _getPairedDevices();
+    _requestPermissions();
   }
 
-  Future<void> _getPairedDevices() async {
-    List<BluetoothDevice> devices = [];
-    try {
-      devices = await FlutterBluetoothSerial.instance.getBondedDevices();
-    } catch (e) {
-      debugPrint("Помилка отримання пристроїв: $e");
-    }
-    setState(() {
-      _devicesList = devices;
-    });
+  Future<void> _requestPermissions() async {
+    // Android 12+ вимагає ці дозволи в рантаймі окремо від Manifest.
+    await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.locationWhenInUse,
+    ].request();
   }
 
-  void _connectToDevice(BluetoothDevice device) async {
+  Future<void> _startScan() async {
     setState(() {
-      _selectedDevice = device;
+      _scanResults.clear();
+      _isScanning = true;
     });
-
-    try {
-      BluetoothConnection connection =
-          await BluetoothConnection.toAddress(device.address);
+    FlutterBluePlus.scanResults.listen((results) {
       setState(() {
-        _connection = connection;
-        _isConnected = true;
+        _scanResults
+          ..clear()
+          ..addAll(results.where((r) => r.device.platformName.isNotEmpty));
       });
+    });
+    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 8));
+    setState(() => _isScanning = false);
+  }
 
-      _connection!.input!.listen((data) {
-        String incoming = utf8.decode(data);
-        if (_isRecording) {
-          setState(() {
-            _receivedData.add("${DateTime.now()}: $incoming");
-          });
+  Future<void> _connect(BluetoothDevice device) async {
+    await FlutterBluePlus.stopScan();
+    try {
+      await device.connect(timeout: const Duration(seconds: 10));
+      _connSub = device.connectionState.listen((state) {
+        setState(() => _isConnected = state == BluetoothConnectionState.connected);
+        if (state == BluetoothConnectionState.disconnected) {
+          _stopRecordingInternal();
         }
-      }).onDone(() {
-        setState(() {
-          _isConnected = false;
-        });
+      });
+
+      final services = await device.discoverServices();
+      for (final s in services) {
+        if (s.uuid == nusServiceUuid) {
+          for (final c in s.characteristics) {
+            if (c.uuid == nusTxUuid) _txChar = c;
+            if (c.uuid == nusRxUuid) _rxChar = c;
+          }
+        }
+      }
+
+      if (_txChar == null) {
+        _showSnackBar("На пристрої не знайдено сервіс UART. Перевір прошивку ESP32.");
+        return;
+      }
+
+      await _txChar!.setNotifyValue(true);
+      _notifySub = _txChar!.onValueReceived.listen(_onData);
+
+      setState(() {
+        _device = device;
+        _isConnected = true;
       });
     } catch (e) {
       _showSnackBar("Помилка підключення: $e");
-      setState(() {
-        _isConnected = false;
-      });
     }
   }
 
-  void _disconnect() async {
-    await _connection?.close();
+  void _onData(List<int> bytes) {
+    final line = String.fromCharCodes(bytes).trim();
+    setState(() => _lastLine = line);
+    if (_isRecording && _setStopwatch != null) {
+      _samples.add(_Sample(_setStopwatch!.elapsedMilliseconds, line));
+    }
+  }
+
+  Future<void> _disconnect() async {
+    await _notifySub?.cancel();
+    await _connSub?.cancel();
+    await _device?.disconnect();
     setState(() {
       _isConnected = false;
-      _isRecording = false;
+      _device = null;
+      _txChar = null;
+      _rxChar = null;
     });
   }
 
-  void _sendCommand(String command) async {
-    if (_connection != null && _connection!.isConnected) {
-      _connection!.output.add(utf8.encode(command));
-      await _connection!.output.allSent;
-      _showSnackBar("Відправлено команду: $command");
-    }
+  Future<void> _sendCommand(String command) async {
+    if (_rxChar == null) return;
+    await _rxChar!.write(command.codeUnits, withoutResponse: true);
   }
 
-  Future<void> _saveDataToFile() async {
-    if (_receivedData.isEmpty) {
-      _showSnackBar("Немає даних для збереження!");
+  void _startSet() {
+    setState(() {
+      _samples.clear();
+      _setStopwatch = Stopwatch()..start();
+      _isRecording = true;
+      _lastSavedPath = null;
+    });
+    _sendCommand("START");
+  }
+
+  Future<void> _stopSet() async {
+    _stopRecordingInternal();
+    await _sendCommand("STOP");
+    await _saveSetToFile();
+  }
+
+  void _stopRecordingInternal() {
+    _setStopwatch?.stop();
+    setState(() => _isRecording = false);
+  }
+
+  Future<void> _saveSetToFile() async {
+    if (_samples.isEmpty) {
+      _showSnackBar("Підхід порожній, немає що зберігати.");
       return;
     }
-
     try {
-      final directory = await getExternalStorageDirectory();
-      final path = "${directory?.path}/bluetooth_data_${DateTime.now().millisecondsSinceEpoch}.txt";
+      final dir = await getExternalStorageDirectory();
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final path = "${dir?.path}/set_$stamp.csv";
       final file = File(path);
 
-      await file.writeAsString(_receivedData.join("\n"));
-      _showSnackBar("Файл збережено: $path");
+      final buffer = StringBuffer("elapsed_ms,raw\n");
+      for (final s in _samples) {
+        buffer.writeln("${s.elapsedMs},${s.raw}");
+      }
+      await file.writeAsString(buffer.toString());
+
+      setState(() => _lastSavedPath = path);
+      _showSnackBar("Збережено: $path (${_samples.length} відліків)");
     } catch (e) {
-      _showSnackBar("Помилка збереження файлу: $e");
+      _showSnackBar("Помилка збереження: $e");
     }
   }
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
     );
+  }
+
+  @override
+  void dispose() {
+    _notifySub?.cancel();
+    _connSub?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Bluetooth Control"),
+        title: const Text("VBT Logger"),
         centerTitle: true,
         backgroundColor: const Color(0xFF1E1E1E),
       ),
@@ -156,129 +226,133 @@ class _BluetoothAppState extends State<BluetoothApp> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2C2C2C),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: DropdownButton<BluetoothDevice>(
-                isExpanded: true,
-                hint: const Text("Оберіть Bluetooth пристрій"),
-                value: _selectedDevice,
-                underline: const SizedBox(),
-                items: _devicesList.map((device) {
-                  return DropdownMenuItem(
-                    value: device,
-                    child: Text(device.name ?? device.address),
-                  );
-                }).toList(),
-                onChanged: (device) {
-                  if (device != null) {
-                    _connectToDevice(device);
-                  }
-                },
-              ),
-            ),
+            _buildStatusCard(),
             const SizedBox(height: 16),
-
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _isConnected ? Colors.greenAccent : Colors.redAccent,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    _isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-                    color: _isConnected ? Colors.greenAccent : Colors.redAccent,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _isConnected
-                          ? "Підключено до: ${_selectedDevice?.name ?? 'Пристрій'}"
-                          : "Статус: Не підключено",
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  if (_isConnected)
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.redAccent),
-                      onPressed: _disconnect,
-                    )
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            ElevatedButton.icon(
-              onPressed: _isConnected ? () => _sendCommand("PING") : null,
-              icon: const Icon(Icons.network_check),
-              label: const Text("Перевірити з'єднання"),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                backgroundColor: Colors.cyan,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isConnected && !_isRecording
-                        ? () {
-                            setState(() => _isRecording = true);
-                            _sendCommand("START");
-                          }
-                        : null,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text("Увімкнути запис"),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.all(16),
-                      backgroundColor: Colors.green,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isConnected && _isRecording
-                        ? () {
-                            setState(() => _isRecording = false);
-                            _sendCommand("STOP");
-                          }
-                        : null,
-                    icon: const Icon(Icons.stop),
-                    label: const Text("Вимкнути запис"),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.all(16),
-                      backgroundColor: Colors.red,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            ElevatedButton.icon(
-              onPressed: _receivedData.isNotEmpty ? _saveDataToFile : null,
-              icon: const Icon(Icons.download),
-              label: Text("Скачати файл (${_receivedData.length} записів)"),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                backgroundColor: Colors.amber,
-                foregroundColor: Colors.black,
-              ),
-            ),
+            if (!_isConnected) _buildScanSection(),
+            if (_isConnected) _buildRecordingSection(),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildStatusCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _isConnected ? Colors.greenAccent : Colors.redAccent,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+            color: _isConnected ? Colors.greenAccent : Colors.redAccent,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _isConnected
+                  ? "Підключено: ${_device?.platformName ?? 'Пристрій'}"
+                  : "Не підключено",
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (_isConnected)
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.redAccent),
+              onPressed: _disconnect,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScanSection() {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ElevatedButton.icon(
+            onPressed: _isScanning ? null : _startScan,
+            icon: const Icon(Icons.search),
+            label: Text(_isScanning ? "Пошук..." : "Знайти пристрій"),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.all(16),
+              backgroundColor: Colors.cyan,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _scanResults.length,
+              itemBuilder: (context, i) {
+                final r = _scanResults[i];
+                return Card(
+                  color: const Color(0xFF1E1E1E),
+                  child: ListTile(
+                    title: Text(r.device.platformName),
+                    subtitle: Text(r.device.remoteId.str),
+                    trailing: Text("${r.rssi} dBm"),
+                    onTap: () => _connect(r.device),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordingSection() {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ElevatedButton.icon(
+            onPressed: _isRecording ? null : _startSet,
+            icon: const Icon(Icons.fiber_manual_record),
+            label: const Text("Почати підхід"),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.all(18),
+              backgroundColor: Colors.green,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: _isRecording ? _stopSet : null,
+            icon: const Icon(Icons.stop),
+            label: const Text("Завершити підхід"),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.all(18),
+              backgroundColor: Colors.red,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            _isRecording
+                ? "Записується... ${_samples.length} відліків"
+                : "Готово до запису",
+            style: const TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          Text("Останній пакет: $_lastLine", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          if (_lastSavedPath != null) ...[
+            const SizedBox(height: 12),
+            Text("Збережено: $_lastSavedPath", style: const TextStyle(fontSize: 12, color: Colors.cyanAccent)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Sample {
+  final int elapsedMs;
+  final String raw;
+  _Sample(this.elapsedMs, this.raw);
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -35,10 +36,18 @@ class _DeviceScreenState extends State<DeviceScreen> {
   BluetoothCharacteristic? _batteryChar;
   StreamSubscription<List<int>>? _dataSubscription;
 
-  // Поля запису підходу
+  // Поля детальної VBT статистики підходу
   bool _isRecording = false;
   int _repCount = 0;
-  double _lastVelocity = 0.0;
+  double _lastMeanV = 0.0;
+  double _lastPeakV = 0.0;
+  int _lastRom = 0;
+  double _bestMeanV = 0.0;
+  double _velocityLoss = 0.0;
+
+  // Термінал / Консоль логів
+  final List<String> _logs = [];
+  final TextEditingController _cmdController = TextEditingController();
 
   @override
   void initState() {
@@ -51,7 +60,18 @@ class _DeviceScreenState extends State<DeviceScreen> {
   void dispose() {
     _scanSubscription?.cancel();
     _dataSubscription?.cancel();
+    _cmdController.dispose();
     super.dispose();
+  }
+
+  void _addLog(String log, {bool isTx = false}) {
+    final timeStr = DateTime.now().toString().substring(11, 19);
+    final prefix = isTx ? "➔ [TX]" : "⬅ [RX]";
+    if (mounted) {
+      setState(() {
+        _logs.insert(0, "[$timeStr] $prefix $log");
+      });
+    }
   }
 
   Future<void> _fetchSystemDevices() async {
@@ -107,7 +127,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       await device.connect(timeout: const Duration(seconds: 8));
       
-      // Пошук сервісів та характеристик для синхронізації
       List<BluetoothService> services = await device.discoverServices();
       for (var service in services) {
         if (service.uuid.toString().toLowerCase() == _serviceUuid.toLowerCase()) {
@@ -115,17 +134,11 @@ class _DeviceScreenState extends State<DeviceScreen> {
             if (char.uuid.toString().toLowerCase() == _dataCharUuid.toLowerCase()) {
               _dataChar = char;
               await _dataChar!.setNotifyValue(true);
-              // Слухаємо дані від фізичної кнопки 1 ESP32
               _dataSubscription = _dataChar!.lastValueStream.listen((value) {
-                String msg = utf8.decode(value);
-                if (msg == "SET_START") {
-                  setState(() => _isRecording = true);
-                } else if (msg.contains("rep")) {
-                  setState(() {
-                    _isRecording = false;
-                    _repCount++;
-                    _lastVelocity = 0.68; // Приклад розпарсеного значення
-                  });
+                if (value.isNotEmpty) {
+                  String msg = utf8.decode(value);
+                  _addLog(msg, isTx: false);
+                  _processIncomingBleData(msg);
                 }
               });
             }
@@ -148,6 +161,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
         _rssi = rssi;
       });
 
+      _addLog("Connected to $name");
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Успішно підключено до $name"), backgroundColor: kGreenColor),
@@ -158,6 +173,39 @@ class _DeviceScreenState extends State<DeviceScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Не вдалося підключитися: $e"), backgroundColor: kRedColor),
         );
+      }
+    }
+  }
+
+  void _processIncomingBleData(String msg) {
+    if (msg == "SET_START") {
+      setState(() {
+        _isRecording = true;
+      });
+    } else if (msg.contains("rep")) {
+      try {
+        Map<String, dynamic> data = jsonDecode(msg);
+        double meanV = (data["mean_v"] ?? 0.0).toDouble();
+        double peakV = (data["peak_v"] ?? 0.0).toDouble();
+        int rom = (data["rom"] ?? 0).toInt();
+
+        setState(() {
+          _isRecording = false;
+          _repCount++;
+          _lastMeanV = meanV;
+          _lastPeakV = peakV;
+          _lastRom = rom;
+
+          if (_bestMeanV == 0.0 || meanV > _bestMeanV) {
+            _bestMeanV = meanV;
+          }
+          if (_bestMeanV > 0) {
+            _velocityLoss = ((_bestMeanV - meanV) / _bestMeanV) * 100;
+            if (_velocityLoss < 0) _velocityLoss = 0;
+          }
+        });
+      } catch (_) {
+        // Простий текст, якщо не JSON
       }
     }
   }
@@ -175,6 +223,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
       _isRecording = false;
     });
 
+    _addLog("Disconnected from device");
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Пристрій відключено"), backgroundColor: kRedColor),
@@ -182,12 +232,14 @@ class _DeviceScreenState extends State<DeviceScreen> {
     }
   }
 
-  // Надсилання команди на ESP32 з додатку
   Future<void> _sendBleCommand(String command) async {
     if (_dataChar != null && _isConnected) {
       try {
         await _dataChar!.write(utf8.encode(command));
-      } catch (_) {}
+        _addLog(command, isTx: true);
+      } catch (e) {
+        _addLog("Err send: $e", isTx: true);
+      }
     }
   }
 
@@ -204,6 +256,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
         _pingMs = stopwatch.elapsedMilliseconds;
       });
 
+      _addLog("Ping: $_pingMs ms, RSSI: $_rssi dBm");
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -216,7 +270,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
     } catch (_) {}
   }
 
-  // Діалогове вікно детальної статистики та заміру пінгу
   void _showDeviceDetailsDialog() {
     showDialog(
       context: context,
@@ -242,7 +295,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
               title: const Text("Рівень сигналу", style: TextStyle(color: Colors.white)),
               subtitle: Text("$_rssi dBm", style: const TextStyle(color: kSubColor)),
             ),
-            const SizedBox(height: 12),
+            const Divider(color: kDividerColor),
             PrimaryButton(
               label: "Заміряти пінг",
               color: kCyanColor,
@@ -250,6 +303,16 @@ class _DeviceScreenState extends State<DeviceScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _measurePing();
+              },
+            ),
+            const SizedBox(height: 8),
+            PrimaryButton(
+              label: "Калібрувати нуль (Tare ZUPT)",
+              color: Colors.amber,
+              icon: Icons.filter_center_focus_rounded,
+              onTap: () {
+                Navigator.pop(context);
+                _sendBleCommand("TARE");
               },
             ),
             const SizedBox(height: 8),
@@ -291,7 +354,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Верхня панель з інформаційним блоком праворуч
+              // Верхній заголовок та компактна плашка стану
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -334,7 +397,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     children: [
-                      // Панель стану та керування підходом
+                      // Панель стану та розширених VBT-метрик
                       Container(
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
@@ -381,22 +444,36 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
                             if (_isConnected) ...[
                               const SizedBox(height: 16),
+                              // Деталізоване табло метрик
                               Container(
-                                padding: const EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
                                   color: kBgColor,
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                child: Column(
                                   children: [
-                                    Text("Повторень: $_repCount", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                    Text("V_mean: ${_lastVelocity.toStringAsFixed(2)} м/с", style: const TextStyle(color: kGreenColor, fontWeight: FontWeight.bold)),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                      children: [
+                                        _vbtMetricTile("Повторень", "$_repCount", Colors.white),
+                                        _vbtMetricTile("V_mean", "${_lastMeanV.toStringAsFixed(2)} м/с", kGreenColor),
+                                        _vbtMetricTile("V_peak", "${_lastPeakV.toStringAsFixed(2)} м/с", kCyanColor),
+                                      ],
+                                    ),
+                                    const Divider(color: kDividerColor, height: 20),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                      children: [
+                                        _vbtMetricTile("Амплітуда (ROM)", "$_lastRom см", Colors.orangeAccent),
+                                        _vbtMetricTile("V_loss (%)", "${_velocityLoss.toStringAsFixed(1)}%",
+                                            _velocityLoss > 20 ? kRedColor : Colors.greenAccent),
+                                      ],
+                                    ),
                                   ],
                                 ),
                               ),
                               const SizedBox(height: 16),
-                              // Розділені окремі кнопки «Почати запис» та «Завершити підхід»
                               Row(
                                 children: [
                                   Expanded(
@@ -421,11 +498,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                       onTap: !_isRecording
                                           ? null
                                           : () {
-                                              setState(() {
-                                                _isRecording = false;
-                                                _repCount++;
-                                                _lastVelocity = 0.71;
-                                              });
                                               _sendBleCommand("STOP");
                                             },
                                     ),
@@ -433,7 +505,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                 ],
                               ),
                               const SizedBox(height: 12),
-                              // Яскраво виділена кнопка «Скачати CSV сесії»
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton.icon(
@@ -465,7 +536,102 @@ class _DeviceScreenState extends State<DeviceScreen> {
                         ),
                       ),
 
-                      // Якщо ПРИСТРІЙ ПІДКЛЮЧЕНО — список інших пристроїв ПРИХОВУЄТЬСЯ
+                      // БЛОК BLE КОНСОЛІ / ТЕРМІНАЛА LОГІВ
+                      if (_isConnected) ...[
+                        const SizedBox(height: 20),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: kCardColor,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text("BLE Монітор (Термінал)", style: TextStyle(color: kSubColor, fontSize: 13, fontWeight: FontWeight.bold)),
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.copy_rounded, size: 18, color: kCyanColor),
+                                        onPressed: () {
+                                          Clipboard.setData(ClipboardData(text: _logs.join("\n")));
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text("Лог скопійовано"), backgroundColor: kCyanColor),
+                                          );
+                                        },
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline_rounded, size: 18, color: kRedColor),
+                                        onPressed: () => setState(() => _logs.clear()),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                height: 130,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.black,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: ListView.builder(
+                                  itemCount: _logs.length,
+                                  itemBuilder: (context, index) {
+                                    final log = _logs[index];
+                                    final isTx = log.contains("[TX]");
+                                    return Text(
+                                      log,
+                                      style: TextStyle(
+                                        color: isTx ? kGreenColor : kCyanColor,
+                                        fontSize: 11,
+                                        fontFamily: 'monospace',
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _cmdController,
+                                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                                      decoration: InputDecoration(
+                                        hintText: "Команда (напр. TARE, READ)",
+                                        hintStyle: const TextStyle(color: kSubColor, fontSize: 12),
+                                        isDense: true,
+                                        filled: true,
+                                        fillColor: kBgColor,
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    style: IconButton.styleFrom(backgroundColor: kCyanColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                                    icon: const Icon(Icons.send_rounded, color: Colors.black, size: 18),
+                                    onPressed: () {
+                                      if (_cmdController.text.trim().isNotEmpty) {
+                                        _sendBleCommand(_cmdController.text.trim());
+                                        _cmdController.clear();
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      // Якщо ПРИСТРІЙ НЕ ПІДКЛЮЧЕНО — показуємо список пристроїв BLE
                       if (!_isConnected) ...[
                         const SizedBox(height: 20),
                         Row(
@@ -556,6 +722,16 @@ class _DeviceScreenState extends State<DeviceScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _vbtMetricTile(String title, String value, Color valColor) {
+    return Column(
+      children: [
+        Text(title, style: const TextStyle(color: kSubColor, fontSize: 11)),
+        const SizedBox(height: 4),
+        Text(value, style: TextStyle(color: valColor, fontSize: 16, fontWeight: FontWeight.bold)),
+      ],
     );
   }
 }

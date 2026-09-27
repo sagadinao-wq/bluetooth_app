@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:async';
+import 'dart:convert';
 import '../../constants/app_colors.dart';
 import '../../widgets/common_widgets.dart';
 
@@ -21,10 +22,20 @@ class _DeviceScreenState extends State<DeviceScreen> {
   BluetoothDevice? _connectedDevice;
   bool _isConnected = false;
   String _connectedDeviceName = "Не підключено";
-  int _rssi = 0;
-  int _pingMs = 0;
+  int _rssi = -65;
+  int _pingMs = 15;
+  int _batteryPercent = 85;
 
-  // Поля для тестової панелі запису
+  // UUIDs згідно з прошивкою ESP32
+  final String _serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+  final String _dataCharUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+  final String _batteryCharUuid = "a23e4210-901e-42cc-8e99-8d6973e659aa";
+
+  BluetoothCharacteristic? _dataChar;
+  BluetoothCharacteristic? _batteryChar;
+  StreamSubscription<List<int>>? _dataSubscription;
+
+  // Поля запису підходу
   bool _isRecording = false;
   int _repCount = 0;
   double _lastVelocity = 0.0;
@@ -39,6 +50,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
   @override
   void dispose() {
     _scanSubscription?.cancel();
+    _dataSubscription?.cancel();
     super.dispose();
   }
 
@@ -53,7 +65,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
     } catch (_) {}
   }
 
-  // Функція запуск/оновлення BLE сканування (викликається також при Pull-to-Refresh)
   Future<void> _startScan() async {
     if (_isScanning) return;
 
@@ -95,6 +106,36 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
     try {
       await device.connect(timeout: const Duration(seconds: 8));
+      
+      // Пошук сервісів та характеристик для синхронізації
+      List<BluetoothService> services = await device.discoverServices();
+      for (var service in services) {
+        if (service.uuid.toString().toLowerCase() == _serviceUuid.toLowerCase()) {
+          for (var char in service.characteristics) {
+            if (char.uuid.toString().toLowerCase() == _dataCharUuid.toLowerCase()) {
+              _dataChar = char;
+              await _dataChar!.setNotifyValue(true);
+              // Слухаємо дані від фізичної кнопки 1 ESP32
+              _dataSubscription = _dataChar!.lastValueStream.listen((value) {
+                String msg = utf8.decode(value);
+                if (msg == "SET_START") {
+                  setState(() => _isRecording = true);
+                } else if (msg.contains("rep")) {
+                  setState(() {
+                    _isRecording = false;
+                    _repCount++;
+                    _lastVelocity = 0.68; // Приклад розпарсеного значення
+                  });
+                }
+              });
+            }
+            if (char.uuid.toString().toLowerCase() == _batteryCharUuid.toLowerCase()) {
+              _batteryChar = char;
+            }
+          }
+        }
+      }
+
       int rssi = -60;
       try {
         rssi = await device.readRssi();
@@ -105,7 +146,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
         _isConnected = true;
         _connectedDeviceName = name;
         _rssi = rssi;
-        _pingMs = 12;
       });
 
       if (mounted) {
@@ -123,6 +163,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
   }
 
   Future<void> _disconnectDevice() async {
+    _dataSubscription?.cancel();
     if (_connectedDevice != null) {
       await _connectedDevice!.disconnect();
     }
@@ -131,8 +172,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
       _connectedDevice = null;
       _isConnected = false;
       _connectedDeviceName = "Не підключено";
-      _rssi = 0;
-      _pingMs = 0;
       _isRecording = false;
     });
 
@@ -140,6 +179,15 @@ class _DeviceScreenState extends State<DeviceScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Пристрій відключено"), backgroundColor: kRedColor),
       );
+    }
+  }
+
+  // Надсилання команди на ESP32 з додатку
+  Future<void> _sendBleCommand(String command) async {
+    if (_dataChar != null && _isConnected) {
+      try {
+        await _dataChar!.write(utf8.encode(command));
+      } catch (_) {}
     }
   }
 
@@ -165,13 +213,59 @@ class _DeviceScreenState extends State<DeviceScreen> {
           ),
         );
       }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Помилка заміру пінгу"), backgroundColor: kRedColor),
-        );
-      }
-    }
+    } catch (_) {}
+  }
+
+  // Діалогове вікно детальної статистики та заміру пінгу
+  void _showDeviceDetailsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: kCardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(_connectedDeviceName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.battery_charging_full, color: kGreenColor),
+              title: const Text("Заряд батареї", style: TextStyle(color: Colors.white)),
+              subtitle: Text("$_batteryPercent% (3.9V)", style: const TextStyle(color: kSubColor)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.speed, color: kCyanColor),
+              title: const Text("Пінг (Latency)", style: TextStyle(color: Colors.white)),
+              subtitle: Text("$_pingMs ms", style: const TextStyle(color: kSubColor)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.network_cell, color: kCyanColor),
+              title: const Text("Рівень сигналу", style: TextStyle(color: Colors.white)),
+              subtitle: Text("$_rssi dBm", style: const TextStyle(color: kSubColor)),
+            ),
+            const SizedBox(height: 12),
+            PrimaryButton(
+              label: "Заміряти пінг",
+              color: kCyanColor,
+              icon: Icons.bolt_rounded,
+              onTap: () {
+                Navigator.pop(context);
+                _measurePing();
+              },
+            ),
+            const SizedBox(height: 8),
+            PrimaryButton(
+              label: "Відключити пристрій",
+              color: kRedColor,
+              icon: Icons.power_settings_new_rounded,
+              onTap: () {
+                Navigator.pop(context);
+                _disconnectDevice();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _getDeviceName(ScanResult res) {
@@ -197,11 +291,41 @@ class _DeviceScreenState extends State<DeviceScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Оновлений заголовок екрана
-              const TopBar(title: "Vector VBT Sensor"),
-              const SizedBox(height: 12),
+              // Верхня панель з інформаційним блоком праворуч
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    "Vector VBT Sensor",
+                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  if (_isConnected)
+                    GestureDetector(
+                      onTap: _showDeviceDetailsDialog,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: kCardColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: kCyanColor.withOpacity(0.5)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.battery_charging_full, size: 16, color: kGreenColor),
+                            const SizedBox(width: 4),
+                            Text("$_batteryPercent%", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.speed, size: 16, color: kCyanColor),
+                            const SizedBox(width: 2),
+                            Text("${_pingMs}ms", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
 
-              // Список із можливістю оновлення свайпом донизу (Pull-to-Refresh)
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: _startScan,
@@ -210,7 +334,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     children: [
-                      // Головна панель пристрою
+                      // Панель стану та керування підходом
                       Container(
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
@@ -223,28 +347,19 @@ class _DeviceScreenState extends State<DeviceScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Expanded(
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.developer_board,
-                                        color: _isConnected ? kCyanColor : kSubColor,
-                                        size: 22,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          _connectedDeviceName,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.developer_board,
+                                      color: _isConnected ? kCyanColor : kSubColor,
+                                      size: 22,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      _connectedDeviceName,
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                                    ),
+                                  ],
                                 ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -263,22 +378,9 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            const Divider(color: kDividerColor, height: 1),
-                            const SizedBox(height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              children: [
-                                _metricTile("Сигнал RSSI", _isConnected ? "$_rssi dBm" : "—", Icons.network_cell),
-                                _metricTile("Пінг (Latency)", _isConnected ? "$_pingMs ms" : "—", Icons.speed),
-                                if (_isConnected)
-                                  _metricTile("Батарея", "85%", Icons.battery_charging_full),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
 
-                            // Панель тестування / Лайв даних
                             if (_isConnected) ...[
+                              const SizedBox(height: 16),
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
@@ -293,61 +395,65 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
+                              // Розділені окремі кнопки «Почати запис» та «Завершити підхід»
                               Row(
                                 children: [
                                   Expanded(
                                     child: PrimaryButton(
-                                      label: _isRecording ? "Зупинити" : "Почати запис",
-                                      color: _isRecording ? kRedColor : kGreenColor,
-                                      icon: _isRecording ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                                      onTap: () {
-                                        setState(() {
-                                          _isRecording = !_isRecording;
-                                          if (!_isRecording) {
-                                            _repCount++;
-                                            _lastVelocity = 0.68; // Тестове значення
-                                          }
-                                        });
-                                      },
+                                      label: "Почати запис",
+                                      color: _isRecording ? kSubColor : kGreenColor,
+                                      icon: Icons.play_arrow_rounded,
+                                      onTap: _isRecording
+                                          ? null
+                                          : () {
+                                              setState(() => _isRecording = true);
+                                              _sendBleCommand("START");
+                                            },
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 10),
                                   Expanded(
                                     child: PrimaryButton(
-                                      label: "Замір пінгу",
-                                      color: kCyanColor,
-                                      icon: Icons.bolt_rounded,
-                                      onTap: _measurePing,
+                                      label: "Завершити",
+                                      color: !_isRecording ? kSubColor : kRedColor,
+                                      icon: Icons.stop_rounded,
+                                      onTap: !_isRecording
+                                          ? null
+                                          : () {
+                                              setState(() {
+                                                _isRecording = false;
+                                                _repCount++;
+                                                _lastVelocity = 0.71;
+                                              });
+                                              _sendBleCommand("STOP");
+                                            },
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 12),
+                              // Яскраво виділена кнопка «Скачати CSV сесії»
                               SizedBox(
                                 width: double.infinity,
-                                child: PrimaryButton(
-                                  label: "Скачати CSV сесії",
-                                  color: kCardColor,
-                                  icon: Icons.download_rounded,
-                                  onTap: () {
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: kCyanColor,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  onPressed: () {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text("Збереження CSV файлу..."), backgroundColor: kCyanColor),
+                                      const SnackBar(content: Text("Збереження CSV файлу..."), backgroundColor: kGreenColor),
                                     );
                                   },
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: double.infinity,
-                                child: PrimaryButton(
-                                  label: "Відключити",
-                                  color: kRedColor,
-                                  icon: Icons.power_settings_new_rounded,
-                                  onTap: _disconnectDevice,
+                                  icon: const Icon(Icons.download_rounded, color: Colors.black),
+                                  label: const Text("Скачати CSV сесії", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                                 ),
                               ),
                             ] else ...[
+                              const SizedBox(height: 16),
                               PrimaryButton(
                                 label: _isScanning ? "Сканування..." : "Сканувати пристрої",
                                 color: kCyanColor,
@@ -359,98 +465,88 @@ class _DeviceScreenState extends State<DeviceScreen> {
                         ),
                       ),
 
-                      const SizedBox(height: 20),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text("Bluetooth пристрої", style: TextStyle(color: kSubColor, fontSize: 14, fontWeight: FontWeight.bold)),
-                          FilterChip(
-                            label: Text(_hideUnknown ? "Тільки з ім'ям" : "Усі пристрої", style: const TextStyle(fontSize: 11, color: Colors.white)),
-                            selected: _hideUnknown,
-                            onSelected: (val) => setState(() => _hideUnknown = val),
-                            selectedColor: kCyanColor.withOpacity(0.3),
-                            backgroundColor: kCardColor,
-                            checkmarkColor: kCyanColor,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Розділ спарених пристроїв
-                      if (_systemDevices.isNotEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 8, top: 4),
-                          child: Text("Спарені в Android", style: TextStyle(color: kCyanColor, fontSize: 12, fontWeight: FontWeight.w600)),
-                        ),
-                        ..._systemDevices.map((dev) {
-                          final name = dev.platformName.isNotEmpty ? dev.platformName : "Bluetooth Device";
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            decoration: BoxDecoration(color: kCardColor, borderRadius: BorderRadius.circular(14)),
-                            child: ListTile(
-                              leading: const Icon(Icons.devices, color: kCyanColor),
-                              title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                              subtitle: Text(dev.remoteId.str, style: const TextStyle(color: kSubColor, fontSize: 12)),
-                              trailing: TextButton(
-                                onPressed: () => _connectToDevice(dev, name),
-                                child: const Text("Підключити", style: TextStyle(color: kCyanColor, fontWeight: FontWeight.bold)),
-                              ),
+                      // Якщо ПРИСТРІЙ ПІДКЛЮЧЕНО — список інших пристроїв ПРИХОВУЄТЬСЯ
+                      if (!_isConnected) ...[
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text("Bluetooth пристрої", style: TextStyle(color: kSubColor, fontSize: 14, fontWeight: FontWeight.bold)),
+                            FilterChip(
+                              label: Text(_hideUnknown ? "Тільки з ім'ям" : "Усі пристрої", style: const TextStyle(fontSize: 11, color: Colors.white)),
+                              selected: _hideUnknown,
+                              onSelected: (val) => setState(() => _hideUnknown = val),
+                              selectedColor: kCyanColor.withOpacity(0.3),
+                              backgroundColor: kCardColor,
+                              checkmarkColor: kCyanColor,
                             ),
-                          );
-                        }),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // Розділ знайдених при скануванні BLE пристроїв
-                      if (filteredResults.isNotEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 8),
-                          child: Text("Знайдені поблизу (потягніть вниз для оновлення)", style: TextStyle(color: kSubColor, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ],
                         ),
-                        ...filteredResults.map((res) {
-                          final rawName = _getDeviceName(res);
-                          final name = rawName.isNotEmpty ? rawName : "Unknown Device";
-                          final mac = res.device.remoteId.str;
+                        const SizedBox(height: 8),
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            decoration: BoxDecoration(color: kCardColor, borderRadius: BorderRadius.circular(14)),
-                            child: ListTile(
-                              leading: Icon(
-                                rawName.contains("Vector") || rawName.contains("ESP32") ? Icons.developer_board : Icons.bluetooth,
-                                color: rawName.contains("Vector") ? kGreenColor : kCyanColor,
-                              ),
-                              title: Text(
-                                name,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: rawName.contains("Vector") ? FontWeight.bold : FontWeight.w600,
+                        if (_systemDevices.isNotEmpty) ...[
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 8, top: 4),
+                            child: Text("Спарені в Android", style: TextStyle(color: kCyanColor, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
+                          ..._systemDevices.map((dev) {
+                            final name = dev.platformName.isNotEmpty ? dev.platformName : "Bluetooth Device";
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(color: kCardColor, borderRadius: BorderRadius.circular(14)),
+                              child: ListTile(
+                                leading: const Icon(Icons.devices, color: kCyanColor),
+                                title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                                subtitle: Text(dev.remoteId.str, style: const TextStyle(color: kSubColor, fontSize: 12)),
+                                trailing: TextButton(
+                                  onPressed: () => _connectToDevice(dev, name),
+                                  child: const Text("Підключити", style: TextStyle(color: kCyanColor, fontWeight: FontWeight.bold)),
                                 ),
                               ),
-                              subtitle: Text("$mac  ·  ${res.rssi} dBm", style: const TextStyle(color: kSubColor, fontSize: 12)),
-                              trailing: TextButton(
-                                onPressed: () => _connectToDevice(res.device, name),
-                                child: const Text("Підключити", style: TextStyle(color: kCyanColor, fontWeight: FontWeight.bold)),
-                              ),
-                            ),
-                          );
-                        }),
-                      ] else if (_isScanning) ...[
-                        const Padding(
-                          padding: EdgeInsets.all(32),
-                          child: Center(child: CircularProgressIndicator(color: kCyanColor)),
-                        ),
-                      ] else if (_systemDevices.isEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.all(32),
-                          child: Center(
-                            child: Text(
-                              "Пристроїв не знайдено.\nПотягніть екран донизу для оновлення.",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: kSubColor),
-                            ),
+                            );
+                          }),
+                          const SizedBox(height: 12),
+                        ],
+
+                        if (filteredResults.isNotEmpty) ...[
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 8),
+                            child: Text("Знайдені поблизу (потягніть вниз для оновлення)", style: TextStyle(color: kSubColor, fontSize: 12, fontWeight: FontWeight.w600)),
                           ),
-                        ),
+                          ...filteredResults.map((res) {
+                            final rawName = _getDeviceName(res);
+                            final name = rawName.isNotEmpty ? rawName : "Unknown Device";
+                            final mac = res.device.remoteId.str;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(color: kCardColor, borderRadius: BorderRadius.circular(14)),
+                              child: ListTile(
+                                leading: Icon(
+                                  rawName.contains("Vector") || rawName.contains("ESP32") ? Icons.developer_board : Icons.bluetooth,
+                                  color: rawName.contains("Vector") ? kGreenColor : kCyanColor,
+                                ),
+                                title: Text(
+                                  name,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: rawName.contains("Vector") ? FontWeight.bold : FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Text("$mac  ·  ${res.rssi} dBm", style: const TextStyle(color: kSubColor, fontSize: 12)),
+                                trailing: TextButton(
+                                  onPressed: () => _connectToDevice(res.device, name),
+                                  child: const Text("Підключити", style: TextStyle(color: kCyanColor, fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                            );
+                          }),
+                        ] else if (_isScanning) ...[
+                          const Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Center(child: CircularProgressIndicator(color: kCyanColor)),
+                          ),
+                        ],
                       ],
                     ],
                   ),
@@ -460,22 +556,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _metricTile(String title, String value, IconData icon) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 16, color: kSubColor),
-            const SizedBox(width: 6),
-            Text(title, style: const TextStyle(color: kSubColor, fontSize: 12)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-      ],
     );
   }
 }

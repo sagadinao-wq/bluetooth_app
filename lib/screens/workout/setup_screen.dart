@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../constants/app_colors.dart';
-import '../../widgets/common_widgets.dart';
+import '../../services/ble_service.dart';
 
 class SetupScreen extends StatefulWidget {
   final String exercise;
@@ -12,18 +12,31 @@ class SetupScreen extends StatefulWidget {
 }
 
 class _SetupScreenState extends State<SetupScreen> {
-  final _exercises = const ['Жим', 'Присід', 'Станова'];
+  final _exercises = const ['Жим', 'Присід', 'Станова', 'Інша'];
   int _selectedExercise = 0;
   
   // Тип підходу: true - Робочий (Working set), false - Розминка (Warm up)
   bool _isWorkingSet = true; 
-  String _weight = '60';
+  String _weight = '0'; // Стартова вага 0
+
+  final BleService _ble = BleService();
 
   @override
   void initState() {
     super.initState();
+    _ble.addListener(_onBleUpdate);
     final idx = _exercises.indexOf(widget.exercise);
     if (idx != -1) _selectedExercise = idx;
+  }
+
+  @override
+  void dispose() {
+    _ble.removeListener(_onBleUpdate);
+    super.dispose();
+  }
+
+  void _onBleUpdate() {
+    if (mounted) setState(() {});
   }
 
   void _onKeyPress(String val) {
@@ -46,18 +59,50 @@ class _SetupScreenState extends State<SetupScreen> {
       backgroundColor: kBgColor,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const TopBar(
-                title: "Налаштування підходу",
-                statusText: "Підключено",
-                statusColor: kGreenColor,
+              // Верхня панель: Заголовок + Клікабельний великий кружечок статусу BLE
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    "Налаштування підходу",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      context.go('/device'); // Перехід у меню приладу для підключення
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _ble.isConnected ? kGreenColor : kRedColor,
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_ble.isConnected ? kGreenColor : kRedColor).withOpacity(0.5),
+                              blurRadius: 8,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
 
-              // 1. Перемикач вправ
+              // 1. Перемикач вправ (Жим, Присід, Станова, Інша)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -76,6 +121,7 @@ class _SetupScreenState extends State<SetupScreen> {
                         labelStyle: TextStyle(
                           color: active ? Colors.black : Colors.white,
                           fontWeight: FontWeight.bold,
+                          fontSize: 14,
                         ),
                       ),
                     );
@@ -83,9 +129,9 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
 
-              // 2. Перемикач типу підходу
+              // 2. Перемикач типу підходу з БІЛЬШИМ ТЕКСТОМ
               Row(
                 children: [
                   Expanded(
@@ -110,28 +156,63 @@ class _SetupScreenState extends State<SetupScreen> {
 
               const Spacer(),
 
-              // 3. Табло вводу ваги
-              Center(
+              // 3. Табло вводу ваги + Кнопка "Далі" СПРАВА
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      _weight,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 64,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    // Табло ваги
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          _weight,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 56,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          "кг",
+                          style: TextStyle(
+                            color: kSubColor,
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      "кг",
-                      style: TextStyle(
-                        color: kSubColor,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
+
+                    // Кнопка "Далі" справа
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kCyanColor,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () {
+                        context.push(
+                          '/workout/calibrate',
+                          extra: {
+                            'exercise': _exercises[_selectedExercise],
+                            'setType': _isWorkingSet ? 'Working set' : 'Warm up',
+                            'weight': _weight,
+                          },
+                        );
+                      },
+                      child: const Row(
+                        children: [
+                          Text("Далі", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                          SizedBox(width: 6),
+                          Icon(Icons.arrow_forward_rounded, size: 20),
+                        ],
                       ),
                     ),
                   ],
@@ -140,26 +221,10 @@ class _SetupScreenState extends State<SetupScreen> {
 
               const Spacer(),
 
-              // 4. Цифрова клавіатура
-              _buildKeypad(),
-
-              const SizedBox(height: 16),
-
-              // 5. Кнопка "Далі"
-              PrimaryButton(
-                label: "Далі",
-                color: kCyanColor,
-                icon: Icons.arrow_forward_rounded,
-                onTap: () {
-                  context.push(
-                    '/workout/calibrate',
-                    extra: {
-                      'exercise': _exercises[_selectedExercise],
-                      'setType': _isWorkingSet ? 'Working set' : 'Warm up',
-                      'weight': _weight,
-                    },
-                  );
-                },
+              // 4. Клавіатура розтягнута до низу та по всій ширині
+              Expanded(
+                flex: 5,
+                child: _buildKeypad(),
               ),
             ],
           ),
@@ -176,12 +241,12 @@ class _SetupScreenState extends State<SetupScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         decoration: BoxDecoration(
           color: isSelected ? kCyanColor : kCardColor,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected ? kCyanColor : Colors.white10,
           ),
@@ -193,15 +258,16 @@ class _SetupScreenState extends State<SetupScreen> {
               style: TextStyle(
                 color: isSelected ? Colors.black : Colors.white,
                 fontWeight: FontWeight.bold,
-                fontSize: 14,
+                fontSize: 16, // Більший текст
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 4),
             Text(
               subLabel,
               style: TextStyle(
                 color: isSelected ? Colors.black87 : kSubColor,
-                fontSize: 11,
+                fontSize: 13, // Більший текст
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -220,44 +286,47 @@ class _SetupScreenState extends State<SetupScreen> {
 
     return Column(
       children: keys.map((row) {
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: row.map((key) {
-            return InkWell(
-              onTap: () {
-                if (key == '⌫') {
-                  setState(() {
-                    if (_weight.length > 1) {
-                      _weight = _weight.substring(0, _weight.length - 1);
-                    } else {
-                      _weight = '0';
-                    }
-                  });
-                } else {
-                  _onKeyPress(key);
-                }
-              },
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                width: 75,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: kCardColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  key,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+        return Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: row.map((key) {
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(4.0),
+                  child: Material(
+                    color: kCardColor,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () {
+                        if (key == '⌫') {
+                          setState(() {
+                            if (_weight.length > 1) {
+                              _weight = _weight.substring(0, _weight.length - 1);
+                            } else {
+                              _weight = '0';
+                            }
+                          });
+                        } else {
+                          _onKeyPress(key);
+                        }
+                      },
+                      child: Center(
+                        child: Text(
+                          key,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            );
-          }).toList(),
+              );
+            }).toList(),
+          ),
         );
       }).toList(),
     );

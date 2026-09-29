@@ -16,8 +16,7 @@ class _SetupScreenState extends State<SetupScreen> {
   int _selectedExercise = 0;
   
   bool _isWorkingSet = true; 
-  String _weight = '0';
-  bool _showKeypad = false; // Контроль відображення клавіатури
+  String _weight = '0'; // Стартова вага 0
 
   final BleService _ble = BleService();
 
@@ -42,13 +41,14 @@ class _SetupScreenState extends State<SetupScreen> {
   void _onKeyPress(String val) {
     setState(() {
       if (val == '.') {
-        if (!_weight.contains('.')) {
+        // Додаємо крапку тільки якщо її ще немає і довжина < 5
+        if (!_weight.contains('.') && _weight.length < 5) {
           _weight += '.';
         }
       } else {
         if (_weight == '0' && val != '.') {
           _weight = val;
-        } else if (_weight.length < 6) {
+        } else if (_weight.length < 5) { // Строге обмеження у 5 символів
           _weight += val;
         }
       }
@@ -70,7 +70,7 @@ class _SetupScreenState extends State<SetupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Верхня панель: Заголовок + Індикатор BLE
+              // 1. Верхня панель: Заголовок + Індикатор BLE
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -107,7 +107,7 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
               const SizedBox(height: 14),
 
-              // 1. Вибір вправи
+              // 2. Вибір вправи
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -136,7 +136,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
               const SizedBox(height: 14),
 
-              // 2. Тип підходу
+              // 3. Перемикач типу підходу
               Row(
                 children: [
                   Expanded(
@@ -159,27 +159,28 @@ class _SetupScreenState extends State<SetupScreen> {
                 ],
               ),
 
-              // 3. Центральна зона вводу ваги та кнопка "Далі"
+              // 4. Центральна зона: Введення ваги та кнопка "Далі"
               Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    setState(() => _showKeypad = true);
-                  },
-                  child: Center(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisAlignment: _hasValidWeight 
+                          ? MainAxisAlignment.spaceBetween 
+                          : MainAxisAlignment.center,
                       children: [
-                        // Табло ваги
+                        // Показник ваги
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: _showKeypad ? kCardColor.withOpacity(0.5) : Colors.transparent,
-                            borderRadius: BorderRadius.circular(20),
-                            border: _showKeypad ? Border.all(color: kCyanColor.withOpacity(0.4)) : null,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                          decoration: _hasValidWeight 
+                              ? BoxDecoration(
+                                  color: kCardColor,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.white12),
+                                )
+                              : null, // Без рамочки, коли 0
                           child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.baseline,
                             textBaseline: TextBaseline.alphabetic,
                             children: [
@@ -187,7 +188,7 @@ class _SetupScreenState extends State<SetupScreen> {
                                 _weight,
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 56,
+                                  fontSize: 54,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -196,7 +197,7 @@ class _SetupScreenState extends State<SetupScreen> {
                                 "кг",
                                 style: TextStyle(
                                   color: kSubColor,
-                                  fontSize: 26,
+                                  fontSize: 24,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -204,41 +205,42 @@ class _SetupScreenState extends State<SetupScreen> {
                           ),
                         ),
 
-                        // Велика квадратна кнопка "Далі", яка з'являється при вазі > 0
+                        // Прямокутна кнопка "Далі", що з'являється тільки при вазі > 0
                         if (_hasValidWeight) ...[
                           const SizedBox(width: 16),
-                          AspectRatio(
-                            aspectRatio: 1.0, // Квадратний формат
-                            child: Material(
-                              color: kCyanColor,
-                              borderRadius: BorderRadius.circular(20),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(20),
-                                onTap: () {
-                                  context.push(
-                                    '/workout/calibrate',
-                                    extra: {
-                                      'exercise': _exercises[_selectedExercise],
-                                      'setType': _isWorkingSet ? 'Working set' : 'Warm up',
-                                      'weight': _weight,
-                                    },
-                                  );
+                          InkWell(
+                            onTap: () {
+                              context.push(
+                                '/workout/calibrate',
+                                extra: {
+                                  'exercise': _exercises[_selectedExercise],
+                                  'setType': _isWorkingSet ? 'Working set' : 'Warm up',
+                                  'weight': _weight,
                                 },
-                                child: const Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.arrow_forward_rounded, color: Colors.black, size: 32),
-                                    SizedBox(height: 4),
-                                    Text(
-                                      "Далі",
-                                      style: TextStyle(
-                                        color: Colors.black,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              width: 100,
+                              height: 90,
+                              decoration: BoxDecoration(
+                                color: kCyanColor,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.arrow_forward_rounded, color: Colors.black, size: 28),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    "Далі",
+                                    style: TextStyle(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -249,23 +251,10 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
               ),
 
-              // 4. Кастомна клавіатура, що виїжджає знизу
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                transitionBuilder: (child, anim) => SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 1),
-                    end: Offset.zero,
-                  ).animate(anim),
-                  child: child,
-                ),
-                child: _showKeypad
-                    ? SizedBox(
-                        height: MediaQuery.of(context).size.height * 0.38,
-                        key: const ValueKey("KeypadVisible"),
-                        child: _buildKeypad(),
-                      )
-                    : const SizedBox.shrink(key: ValueKey("KeypadHidden")),
+              // 5. Приплюснута клавіатура з відступами
+              SizedBox(
+                height: 230, // Приплюснута висота блоку клавіатури
+                child: _buildKeypad(),
               ),
             ],
           ),
@@ -333,7 +322,7 @@ class _SetupScreenState extends State<SetupScreen> {
             children: row.map((key) {
               return Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(4.0),
+                  padding: const EdgeInsets.all(4.0), // Зазори між кнопками
                   child: Material(
                     color: kCardColor,
                     borderRadius: BorderRadius.circular(14),
@@ -358,7 +347,7 @@ class _SetupScreenState extends State<SetupScreen> {
                           key,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 24,
+                            fontSize: 22,
                             fontWeight: FontWeight.bold,
                           ),
                         ),

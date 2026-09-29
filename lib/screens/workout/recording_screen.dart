@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'dart:async';
 import '../../constants/app_colors.dart';
-import '../../widgets/common_widgets.dart';
+import '../../services/ble_service.dart';
 
 class RecordingScreen extends StatefulWidget {
   final String exercise;
+  final String setType;
   final String weight;
 
   const RecordingScreen({
     super.key,
     required this.exercise,
+    required this.setType,
     required this.weight,
   });
 
@@ -18,105 +19,101 @@ class RecordingScreen extends StatefulWidget {
   State<RecordingScreen> createState() => _RecordingScreenState();
 }
 
-class _RecordingScreenState extends State<RecordingScreen> {
-  bool _recording = false;
-  int _elapsedMs = 0;
-  int _samples = 0;
-  Timer? _timer;
+class _RecordingScreenState extends State<RecordingScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+  final BleService _ble = BleService();
 
-  void _start() {
-    setState(() {
-      _recording = true;
-      _elapsedMs = 0;
-      _samples = 0;
-    });
-    _timer = Timer.periodic(const Duration(milliseconds: 50), (_) {
-      setState(() {
-        _elapsedMs += 50;
-        _samples += 5;
-      });
-    });
-  }
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
 
-  void _stop() {
-    _timer?.cancel();
-    setState(() => _recording = false);
-    context.push(
-      '/workout/summary',
-      extra: {
-        'exercise': widget.exercise,
-        'weight': widget.weight,
-        'durationMs': _elapsedMs,
-        'samples': _samples,
-      },
-    );
+    _ble.addListener(_checkBleState);
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _animController.dispose();
+    _ble.removeListener(_checkBleState);
     super.dispose();
+  }
+
+  // Якщо підхід зупинено з датчика кнопкою 1 або авто-стопом
+  void _checkBleState() {
+    if (!_ble.isRecording && mounted) {
+      _finishRecording();
+    }
+  }
+
+  void _finishRecording() {
+    _ble.sendBleCommand("STOP");
+    context.go('/workout/summary', extra: {
+      'exercise': widget.exercise,
+      'setType': widget.setType,
+      'weight': widget.weight,
+      'repCount': _ble.repCount,
+      'bestV': _ble.lastMeanV,
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final seconds = (_elapsedMs / 1000).toStringAsFixed(1);
     return Scaffold(
       backgroundColor: kBgColor,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          padding: const EdgeInsets.all(24.0),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              TopBar(
-                title: "Запис",
-                statusText: _recording ? "Йде запис" : "Готово",
-                statusColor: _recording ? kRedColor : kSubColor,
-              ),
-              const SizedBox(height: 4),
               Text(
                 "${widget.exercise} · ${widget.weight} кг",
-                style: const TextStyle(color: kSubColor, fontSize: 13),
+                style: const TextStyle(color: kSubColor, fontSize: 16, fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 18),
-              Container(
-                height: 190,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: kCardColor,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  kExerciseImages[widget.exercise] ?? 'assets/exercises/bench.jpg',
-                  fit: BoxFit.contain,
-                ),
-              ),
-              const Spacer(),
-              Center(
-                child: Column(
-                  children: [
-                    Text(
-                      "$seconds с",
-                      style: const TextStyle(
-                        fontSize: 52,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: -1,
+
+              // Анімований пульсуючий круг
+              AnimatedBuilder(
+                animation: _animController,
+                builder: (context, child) {
+                  double scale = 1.0 + (_animController.value * 0.25);
+                  return Transform.scale(
+                    scale: scale,
+                    child: Container(
+                      width: 140,
+                      height: 140,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: kCyanColor.withOpacity(0.8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: kCyanColor.withOpacity(0.4),
+                            blurRadius: 30,
+                            spreadRadius: 10,
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text("$_samples відліків", style: const TextStyle(color: kSubColor, fontSize: 15)),
-                  ],
-                ),
+                  );
+                },
               ),
-              const Spacer(),
-              PrimaryButton(
-                label: _recording ? "Завершити підхід" : "Почати запис",
-                color: _recording ? kRedColor : kCyanColor,
-                onTap: _recording ? _stop : _start,
-                icon: _recording ? Icons.stop_rounded : Icons.fiber_manual_record,
+
+              // Нижня кнопка завершення підходу
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kRedColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: _finishRecording,
+                  icon: const Icon(Icons.stop_rounded, size: 28),
+                  label: const Text("Завершити підхід", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
               ),
             ],
           ),

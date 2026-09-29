@@ -15,9 +15,9 @@ class _SetupScreenState extends State<SetupScreen> {
   final _exercises = const ['Жим', 'Присід', 'Станова', 'Інша'];
   int _selectedExercise = 0;
   
-  // Тип підходу: true - Робочий (Working set), false - Розминка (Warm up)
   bool _isWorkingSet = true; 
-  String _weight = '0'; // Стартова вага 0
+  String _weight = '0';
+  bool _showKeypad = false; // Контроль відображення клавіатури
 
   final BleService _ble = BleService();
 
@@ -42,18 +42,22 @@ class _SetupScreenState extends State<SetupScreen> {
   void _onKeyPress(String val) {
     setState(() {
       if (val == '.') {
-        // Додаємо крапку тільки якщо її ще немає
         if (!_weight.contains('.')) {
           _weight += '.';
         }
       } else {
         if (_weight == '0' && val != '.') {
           _weight = val;
-        } else if (_weight.length < 6) { // Збільшено ліміт під дробові ваги (напр. 175.5)
+        } else if (_weight.length < 6) {
           _weight += val;
         }
       }
     });
+  }
+
+  bool get _hasValidWeight {
+    final parsed = double.tryParse(_weight) ?? 0;
+    return parsed > 0;
   }
 
   @override
@@ -66,7 +70,7 @@ class _SetupScreenState extends State<SetupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Верхня панель: Заголовок + Клікабельний великий кружечок статусу BLE
+              // Верхня панель: Заголовок + Індикатор BLE
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -79,9 +83,7 @@ class _SetupScreenState extends State<SetupScreen> {
                     ),
                   ),
                   GestureDetector(
-                    onTap: () {
-                      context.go('/device'); // Перехід у меню приладу для підключення
-                    },
+                    onTap: () => context.go('/device'),
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       child: Container(
@@ -105,7 +107,7 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
               const SizedBox(height: 14),
 
-              // 1. Перемикач вправ (Жим, Присід, Станова, Інша)
+              // 1. Вибір вправи
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -134,7 +136,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
               const SizedBox(height: 14),
 
-              // 2. Перемикач типу підходу
+              // 2. Тип підходу
               Row(
                 children: [
                   Expanded(
@@ -157,77 +159,113 @@ class _SetupScreenState extends State<SetupScreen> {
                 ],
               ),
 
-              const Spacer(),
-
-              // 3. Табло вводу ваги + Кнопка "Далі" СПРАВА
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Табло ваги
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
+              // 3. Центральна зона вводу ваги та кнопка "Далі"
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    setState(() => _showKeypad = true);
+                  },
+                  child: Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Text(
-                          _weight,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 52, // Трохи зменшено шрифт для комфортного розташування дробових чисел
-                            fontWeight: FontWeight.bold,
+                        // Табло ваги
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _showKeypad ? kCardColor.withOpacity(0.5) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(20),
+                            border: _showKeypad ? Border.all(color: kCyanColor.withOpacity(0.4)) : null,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text(
+                                _weight,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 56,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                "кг",
+                                style: TextStyle(
+                                  color: kSubColor,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          "кг",
-                          style: TextStyle(
-                            color: kSubColor,
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
+
+                        // Велика квадратна кнопка "Далі", яка з'являється при вазі > 0
+                        if (_hasValidWeight) ...[
+                          const SizedBox(width: 16),
+                          AspectRatio(
+                            aspectRatio: 1.0, // Квадратний формат
+                            child: Material(
+                              color: kCyanColor,
+                              borderRadius: BorderRadius.circular(20),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(20),
+                                onTap: () {
+                                  context.push(
+                                    '/workout/calibrate',
+                                    extra: {
+                                      'exercise': _exercises[_selectedExercise],
+                                      'setType': _isWorkingSet ? 'Working set' : 'Warm up',
+                                      'weight': _weight,
+                                    },
+                                  );
+                                },
+                                child: const Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.arrow_forward_rounded, color: Colors.black, size: 32),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      "Далі",
+                                      style: TextStyle(
+                                        color: Colors.black,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
-
-                    // Кнопка "Далі" справа
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: kCyanColor,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      onPressed: () {
-                        context.push(
-                          '/workout/calibrate',
-                          extra: {
-                            'exercise': _exercises[_selectedExercise],
-                            'setType': _isWorkingSet ? 'Working set' : 'Warm up',
-                            'weight': _weight,
-                          },
-                        );
-                      },
-                      child: const Row(
-                        children: [
-                          Text("Далі", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-                          SizedBox(width: 6),
-                          Icon(Icons.arrow_forward_rounded, size: 20),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
 
-              const Spacer(),
-
-              // 4. Клавіатура з кнопкою '.' замість 'C'
-              Expanded(
-                flex: 5,
-                child: _buildKeypad(),
+              // 4. Кастомна клавіатура, що виїжджає знизу
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                transitionBuilder: (child, anim) => SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 1),
+                    end: Offset.zero,
+                  ).animate(anim),
+                  child: child,
+                ),
+                child: _showKeypad
+                    ? SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.38,
+                        key: const ValueKey("KeypadVisible"),
+                        child: _buildKeypad(),
+                      )
+                    : const SizedBox.shrink(key: ValueKey("KeypadHidden")),
               ),
             ],
           ),
@@ -284,7 +322,7 @@ class _SetupScreenState extends State<SetupScreen> {
       ['1', '2', '3'],
       ['4', '5', '6'],
       ['7', '8', '9'],
-      ['.', '0', '⌫'] // Замість 'C' стоїть крапка '.'
+      ['.', '0', '⌫']
     ];
 
     return Column(

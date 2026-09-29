@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'dart:async';
-import 'dart:convert';
 import '../../constants/app_colors.dart';
 import '../../widgets/common_widgets.dart';
+import '../../services/ble_service.dart';
 
 class DeviceScreen extends StatefulWidget {
   const DeviceScreen({super.key});
@@ -14,291 +13,29 @@ class DeviceScreen extends StatefulWidget {
 }
 
 class _DeviceScreenState extends State<DeviceScreen> {
-  bool _isScanning = false;
+  final BleService _ble = BleService();
   bool _hideUnknown = true;
-  List<ScanResult> _scanResults = [];
-  List<BluetoothDevice> _systemDevices = [];
-  StreamSubscription<List<ScanResult>>? _scanSubscription;
-
-  BluetoothDevice? _connectedDevice;
-  bool _isConnected = false;
-  String _connectedDeviceName = "Не підключено";
-  int _rssi = -65;
-  int _pingMs = 15;
-  
-  // Поля акумулятора
-  int _batteryPercent = 85;
-  String _batteryVoltage = "3.90V";
-
-  // UUIDs згідно з прошивкою ESP32
-  final String _serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-  final String _dataCharUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-  final String _batteryCharUuid = "a23e4210-901e-42cc-8e99-8d6973e659aa";
-
-  BluetoothCharacteristic? _dataChar;
-  BluetoothCharacteristic? _batteryChar;
-  StreamSubscription<List<int>>? _dataSubscription;
-  StreamSubscription<List<int>>? _batterySubscription;
-
-  // Поля детальної VBT статистики підходу
-  bool _isRecording = false;
-  int _repCount = 0;
-  double _lastMeanV = 0.0;
-  double _lastPeakV = 0.0;
-  int _lastRom = 0;
-  double _bestMeanV = 0.0;
-  double _velocityLoss = 0.0;
-
-  // Термінал / Консоль логів
-  final List<String> _logs = [];
   final TextEditingController _cmdController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _fetchSystemDevices();
-    _startScan();
+    // Підписуємося на оновлення сервісу для перебудови UI
+    _ble.addListener(_onBleUpdate);
+    if (!_ble.isConnected) {
+      _ble.startScan();
+    }
   }
 
   @override
   void dispose() {
-    _scanSubscription?.cancel();
-    _dataSubscription?.cancel();
-    _batterySubscription?.cancel();
+    _ble.removeListener(_onBleUpdate);
     _cmdController.dispose();
     super.dispose();
   }
 
-  void _addLog(String log, {bool isTx = false}) {
-    final timeStr = DateTime.now().toString().substring(11, 19);
-    final prefix = isTx ? "➔ [TX]" : "⬅ [RX]";
-    if (mounted) {
-      setState(() {
-        _logs.insert(0, "[$timeStr] $prefix $log");
-      });
-    }
-  }
-
-  Future<void> _fetchSystemDevices() async {
-    try {
-      final bonded = await FlutterBluePlus.systemDevices;
-      if (mounted) {
-        setState(() {
-          _systemDevices = bonded;
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _startScan() async {
-    if (_isScanning) return;
-
-    setState(() {
-      _isScanning = true;
-      _scanResults.clear();
-    });
-
-    await _fetchSystemDevices();
-
-    _scanSubscription?.cancel();
-    _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
-      if (mounted) {
-        setState(() {
-          _scanResults = results;
-        });
-      }
-    });
-
-    try {
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 8));
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Помилка сканування: $e"), backgroundColor: kRedColor),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isScanning = false);
-      }
-    }
-  }
-
-  Future<void> _connectToDevice(BluetoothDevice device, String name) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Підключення до $name..."), backgroundColor: kCyanColor),
-    );
-
-    try {
-      await device.connect(timeout: const Duration(seconds: 8));
-      
-      List<BluetoothService> services = await device.discoverServices();
-      for (var service in services) {
-        if (service.uuid.toString().toLowerCase() == _serviceUuid.toLowerCase()) {
-          for (var char in service.characteristics) {
-            // Підписка на якісні/VBT дані
-            if (char.uuid.toString().toLowerCase() == _dataCharUuid.toLowerCase()) {
-              _dataChar = char;
-              await _dataChar!.setNotifyValue(true);
-              _dataSubscription = _dataChar!.lastValueStream.listen((value) {
-                if (value.isNotEmpty) {
-                  String msg = utf8.decode(value);
-                  _addLog(msg, isTx: false);
-                  _processIncomingBleData(msg);
-                }
-              });
-            }
-            // Підписка на дані акумулятора (Напруга та Відсотки)
-            if (char.uuid.toString().toLowerCase() == _batteryCharUuid.toLowerCase()) {
-              _batteryChar = char;
-              await _batteryChar!.setNotifyValue(true);
-              _batterySubscription = _batteryChar!.lastValueStream.listen((value) {
-                if (value.isNotEmpty) {
-                  String payload = utf8.decode(value);
-                  _addLog("Batt: $payload", isTx: false);
-                  _processIncomingBatteryData(payload);
-                }
-              });
-            }
-          }
-        }
-      }
-
-      int rssi = -60;
-      try {
-        rssi = await device.readRssi();
-      } catch (_) {}
-
-      setState(() {
-        _connectedDevice = device;
-        _isConnected = true;
-        _connectedDeviceName = name;
-        _rssi = rssi;
-      });
-
-      _addLog("Connected to $name");
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Успішно підключено до $name"), backgroundColor: kGreenColor),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Не вдалося підключитися: $e"), backgroundColor: kRedColor),
-        );
-      }
-    }
-  }
-
-  void _processIncomingBatteryData(String payload) {
-    // Парсинг формату видачі ESP32 "3.92V,85%" або "3.92V"
-    List<String> parts = payload.split(',');
-    if (parts.length == 2) {
-      setState(() {
-        _batteryVoltage = parts[0];
-        _batteryPercent = int.tryParse(parts[1].replaceAll('%', '')) ?? _batteryPercent;
-      });
-    } else if (payload.contains('V')) {
-      setState(() {
-        _batteryVoltage = payload;
-      });
-    }
-  }
-
-  void _processIncomingBleData(String msg) {
-    if (msg == "SET_START") {
-      setState(() {
-        _isRecording = true;
-      });
-    } else if (msg.contains("rep")) {
-      try {
-        Map<String, dynamic> data = jsonDecode(msg);
-        double meanV = (data["mean_v"] ?? 0.0).toDouble();
-        double peakV = (data["peak_v"] ?? 0.0).toDouble();
-        int rom = (data["rom"] ?? 0).toInt();
-
-        setState(() {
-          _isRecording = false;
-          _repCount++;
-          _lastMeanV = meanV;
-          _lastPeakV = peakV;
-          _lastRom = rom;
-
-          if (_bestMeanV == 0.0 || meanV > _bestMeanV) {
-            _bestMeanV = meanV;
-          }
-          if (_bestMeanV > 0) {
-            _velocityLoss = ((_bestMeanV - meanV) / _bestMeanV) * 100;
-            if (_velocityLoss < 0) _velocityLoss = 0;
-          }
-        });
-      } catch (_) {
-        // Простий текст, якщо не JSON
-      }
-    }
-  }
-
-  Future<void> _disconnectDevice() async {
-    _dataSubscription?.cancel();
-    _batterySubscription?.cancel();
-    if (_connectedDevice != null) {
-      await _connectedDevice!.disconnect();
-    }
-
-    setState(() {
-      _connectedDevice = null;
-      _isConnected = false;
-      _connectedDeviceName = "Не підключено";
-      _isRecording = false;
-    });
-
-    _addLog("Disconnected from device");
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Пристрій відключено"), backgroundColor: kRedColor),
-      );
-    }
-  }
-
-  Future<void> _sendBleCommand(String command) async {
-    if (_dataChar != null && _isConnected) {
-      try {
-        await _dataChar!.write(utf8.encode(command));
-        _addLog(command, isTx: true);
-      } catch (e) {
-        _addLog("Err send: $e", isTx: true);
-      }
-    }
-  }
-
-  Future<void> _measurePing() async {
-    if (!_isConnected || _connectedDevice == null) return;
-
-    final stopwatch = Stopwatch()..start();
-    try {
-      final newRssi = await _connectedDevice!.readRssi();
-      stopwatch.stop();
-
-      setState(() {
-        _rssi = newRssi;
-        _pingMs = stopwatch.elapsedMilliseconds;
-      });
-
-      _addLog("Ping: $_pingMs ms, RSSI: $_rssi dBm");
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Пінг: $_pingMs ms · Сигнал: $_rssi dBm"),
-            backgroundColor: kGreenColor,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (_) {}
+  void _onBleUpdate() {
+    if (mounted) setState(() {});
   }
 
   void _showDeviceDetailsDialog() {
@@ -307,24 +44,24 @@ class _DeviceScreenState extends State<DeviceScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: kCardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text(_connectedDeviceName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(_ble.connectedDeviceName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               leading: const Icon(Icons.battery_charging_full, color: kGreenColor),
               title: const Text("Заряд батареї", style: TextStyle(color: Colors.white)),
-              subtitle: Text("$_batteryPercent% ($_batteryVoltage)", style: const TextStyle(color: kSubColor)),
+              subtitle: Text("${_ble.batteryPercent}% (${_ble.batteryVoltage})", style: const TextStyle(color: kSubColor)),
             ),
             ListTile(
               leading: const Icon(Icons.speed, color: kCyanColor),
               title: const Text("Пінг (Latency)", style: TextStyle(color: Colors.white)),
-              subtitle: Text("$_pingMs ms", style: const TextStyle(color: kSubColor)),
+              subtitle: Text("${_ble.pingMs} ms", style: const TextStyle(color: kSubColor)),
             ),
             ListTile(
               leading: const Icon(Icons.network_cell, color: kCyanColor),
               title: const Text("Рівень сигналу", style: TextStyle(color: Colors.white)),
-              subtitle: Text("$_rssi dBm", style: const TextStyle(color: kSubColor)),
+              subtitle: Text("${_ble.rssi} dBm", style: const TextStyle(color: kSubColor)),
             ),
             const Divider(color: kDividerColor),
             PrimaryButton(
@@ -333,7 +70,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
               icon: Icons.bolt_rounded,
               onTap: () {
                 Navigator.pop(context);
-                _measurePing();
+                _ble.measurePing();
               },
             ),
             const SizedBox(height: 8),
@@ -343,7 +80,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
               icon: Icons.filter_center_focus_rounded,
               onTap: () {
                 Navigator.pop(context);
-                _sendBleCommand("TARE");
+                _ble.sendBleCommand("TARE");
               },
             ),
             const SizedBox(height: 8),
@@ -353,7 +90,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
               icon: Icons.power_settings_new_rounded,
               onTap: () {
                 Navigator.pop(context);
-                _disconnectDevice();
+                _ble.disconnectDevice();
               },
             ),
           ],
@@ -371,7 +108,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredResults = _scanResults.where((r) {
+    final filteredResults = _ble.scanResults.where((r) {
       final name = _getDeviceName(r);
       if (_hideUnknown && name.isEmpty) return false;
       return true;
@@ -385,7 +122,6 @@ class _DeviceScreenState extends State<DeviceScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Верхній заголовок та компактна плашка стану
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -393,7 +129,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                     "Vector VBT Sensor",
                     style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                  if (_isConnected)
+                  if (_ble.isConnected)
                     GestureDetector(
                       onTap: _showDeviceDetailsDialog,
                       child: Container(
@@ -407,11 +143,11 @@ class _DeviceScreenState extends State<DeviceScreen> {
                           children: [
                             const Icon(Icons.battery_charging_full, size: 16, color: kGreenColor),
                             const SizedBox(width: 4),
-                            Text("$_batteryPercent%", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text("${_ble.batteryPercent}%", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                             const SizedBox(width: 8),
                             const Icon(Icons.speed, size: 16, color: kCyanColor),
                             const SizedBox(width: 2),
-                            Text("${_pingMs}ms", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                            Text("${_ble.pingMs}ms", style: const TextStyle(color: Colors.white, fontSize: 12)),
                           ],
                         ),
                       ),
@@ -422,19 +158,18 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
               Expanded(
                 child: RefreshIndicator(
-                  onRefresh: _startScan,
+                  onRefresh: _ble.startScan,
                   color: kCyanColor,
                   backgroundColor: kCardColor,
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     children: [
-                      // Панель стану та розширених VBT-метрик
                       Container(
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
                           color: kCardColor,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: _isConnected ? kCyanColor : kDividerColor),
+                          border: Border.all(color: _ble.isConnected ? kCyanColor : kDividerColor),
                         ),
                         child: Column(
                           children: [
@@ -443,62 +178,47 @@ class _DeviceScreenState extends State<DeviceScreen> {
                               children: [
                                 Row(
                                   children: [
-                                    Icon(
-                                      Icons.developer_board,
-                                      color: _isConnected ? kCyanColor : kSubColor,
-                                      size: 22,
-                                    ),
+                                    Icon(Icons.developer_board, color: _ble.isConnected ? kCyanColor : kSubColor, size: 22),
                                     const SizedBox(width: 10),
-                                    Text(
-                                      _connectedDeviceName,
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
+                                    Text(_ble.connectedDeviceName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                                   ],
                                 ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: (_isConnected ? kGreenColor : kRedColor).withOpacity(0.15),
+                                    color: (_ble.isConnected ? kGreenColor : kRedColor).withOpacity(0.15),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
-                                    _isConnected ? "Підключено" : "Відключено",
-                                    style: TextStyle(
-                                      color: _isConnected ? kGreenColor : kRedColor,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                    _ble.isConnected ? "Підключено" : "Відключено",
+                                    style: TextStyle(color: _ble.isConnected ? kGreenColor : kRedColor, fontSize: 12, fontWeight: FontWeight.bold),
                                   ),
                                 ),
                               ],
                             ),
 
-                            if (_isConnected) ...[
+                            if (_ble.isConnected) ...[
                               const SizedBox(height: 16),
-                              // Деталізоване табло метрик
                               Container(
                                 padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: kBgColor,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
+                                decoration: BoxDecoration(color: kBgColor, borderRadius: BorderRadius.circular(14)),
                                 child: Column(
                                   children: [
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                                       children: [
-                                        _vbtMetricTile("Повторень", "$_repCount", Colors.white),
-                                        _vbtMetricTile("V_mean", "${_lastMeanV.toStringAsFixed(2)} м/с", kGreenColor),
-                                        _vbtMetricTile("V_peak", "${_lastPeakV.toStringAsFixed(2)} м/с", kCyanColor),
+                                        _vbtMetricTile("Повторень", "${_ble.repCount}", Colors.white),
+                                        _vbtMetricTile("V_mean", "${_ble.lastMeanV.toStringAsFixed(2)} м/с", kGreenColor),
+                                        _vbtMetricTile("V_peak", "${_ble.lastPeakV.toStringAsFixed(2)} м/с", kCyanColor),
                                       ],
                                     ),
                                     const Divider(color: kDividerColor, height: 20),
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                                       children: [
-                                        _vbtMetricTile("Амплітуда (ROM)", "$_lastRom см", Colors.orangeAccent),
-                                        _vbtMetricTile("V_loss (%)", "${_velocityLoss.toStringAsFixed(1)}%",
-                                            _velocityLoss > 20 ? kRedColor : Colors.greenAccent),
+                                        _vbtMetricTile("Амплітуда (ROM)", "${_ble.lastRom} см", Colors.orangeAccent),
+                                        _vbtMetricTile("V_loss (%)", "${_ble.velocityLoss.toStringAsFixed(1)}%",
+                                            _ble.velocityLoss > 20 ? kRedColor : Colors.greenAccent),
                                       ],
                                     ),
                                   ],
@@ -510,27 +230,18 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                   Expanded(
                                     child: PrimaryButton(
                                       label: "Почати запис",
-                                      color: _isRecording ? kSubColor : kGreenColor,
+                                      color: _ble.isRecording ? kSubColor : kGreenColor,
                                       icon: Icons.play_arrow_rounded,
-                                      onTap: _isRecording
-                                          ? null
-                                          : () {
-                                              setState(() => _isRecording = true);
-                                              _sendBleCommand("START");
-                                            },
+                                      onTap: _ble.isRecording ? null : () => _ble.sendBleCommand("START"),
                                     ),
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: PrimaryButton(
                                       label: "Завершити",
-                                      color: !_isRecording ? kSubColor : kRedColor,
+                                      color: !_ble.isRecording ? kSubColor : kRedColor,
                                       icon: Icons.stop_rounded,
-                                      onTap: !_isRecording
-                                          ? null
-                                          : () {
-                                              _sendBleCommand("STOP");
-                                            },
+                                      onTap: !_ble.isRecording ? null : () => _ble.sendBleCommand("STOP"),
                                     ),
                                   ),
                                 ],
@@ -557,18 +268,17 @@ class _DeviceScreenState extends State<DeviceScreen> {
                             ] else ...[
                               const SizedBox(height: 16),
                               PrimaryButton(
-                                label: _isScanning ? "Сканування..." : "Сканувати пристрої",
+                                label: _ble.isScanning ? "Сканування..." : "Сканувати пристрої",
                                 color: kCyanColor,
                                 icon: Icons.search_rounded,
-                                onTap: _isScanning ? null : _startScan,
+                                onTap: _ble.isScanning ? null : _ble.startScan,
                               ),
                             ],
                           ],
                         ),
                       ),
 
-                      // БЛОК BLE КОНСОЛІ / ТЕРМІНАЛА ЛОГІВ
-                      if (_isConnected) ...[
+                      if (_ble.isConnected) ...[
                         const SizedBox(height: 20),
                         Container(
                           padding: const EdgeInsets.all(14),
@@ -589,7 +299,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                       IconButton(
                                         icon: const Icon(Icons.copy_rounded, size: 18, color: kCyanColor),
                                         onPressed: () {
-                                          Clipboard.setData(ClipboardData(text: _logs.join("\n")));
+                                          Clipboard.setData(ClipboardData(text: _ble.logs.join("\n")));
                                           ScaffoldMessenger.of(context).showSnackBar(
                                             const SnackBar(content: Text("Лог скопійовано"), backgroundColor: kCyanColor),
                                           );
@@ -597,7 +307,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                       ),
                                       IconButton(
                                         icon: const Icon(Icons.delete_outline_rounded, size: 18, color: kRedColor),
-                                        onPressed: () => setState(() => _logs.clear()),
+                                        onPressed: _ble.clearLogs,
                                       ),
                                     ],
                                   ),
@@ -607,22 +317,15 @@ class _DeviceScreenState extends State<DeviceScreen> {
                               Container(
                                 height: 130,
                                 padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: Colors.black,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
+                                decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(10)),
                                 child: ListView.builder(
-                                  itemCount: _logs.length,
+                                  itemCount: _ble.logs.length,
                                   itemBuilder: (context, index) {
-                                    final log = _logs[index];
+                                    final log = _ble.logs[index];
                                     final isTx = log.contains("[TX]");
                                     return Text(
                                       log,
-                                      style: TextStyle(
-                                        color: isTx ? kGreenColor : kCyanColor,
-                                        fontSize: 11,
-                                        fontFamily: 'monospace',
-                                      ),
+                                      style: TextStyle(color: isTx ? kGreenColor : kCyanColor, fontSize: 11, fontFamily: 'monospace'),
                                     );
                                   },
                                 ),
@@ -650,7 +353,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                     icon: const Icon(Icons.send_rounded, color: Colors.black, size: 18),
                                     onPressed: () {
                                       if (_cmdController.text.trim().isNotEmpty) {
-                                        _sendBleCommand(_cmdController.text.trim());
+                                        _ble.sendBleCommand(_cmdController.text.trim());
                                         _cmdController.clear();
                                       }
                                     },
@@ -662,8 +365,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                         ),
                       ],
 
-                      // Якщо ПРИСТРІЙ НЕ ПІДКЛЮЧЕНО — показуємо список пристроїв BLE
-                      if (!_isConnected) ...[
+                      if (!_ble.isConnected) ...[
                         const SizedBox(height: 20),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -681,12 +383,12 @@ class _DeviceScreenState extends State<DeviceScreen> {
                         ),
                         const SizedBox(height: 8),
 
-                        if (_systemDevices.isNotEmpty) ...[
+                        if (_ble.systemDevices.isNotEmpty) ...[
                           const Padding(
                             padding: EdgeInsets.only(bottom: 8, top: 4),
                             child: Text("Спарені в Android", style: TextStyle(color: kCyanColor, fontSize: 12, fontWeight: FontWeight.w600)),
                           ),
-                          ..._systemDevices.map((dev) {
+                          ..._ble.systemDevices.map((dev) {
                             final name = dev.platformName.isNotEmpty ? dev.platformName : "Bluetooth Device";
                             return Container(
                               margin: const EdgeInsets.only(bottom: 8),
@@ -696,7 +398,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                 title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                                 subtitle: Text(dev.remoteId.str, style: const TextStyle(color: kSubColor, fontSize: 12)),
                                 trailing: TextButton(
-                                  onPressed: () => _connectToDevice(dev, name),
+                                  onPressed: () => _ble.connectToDevice(dev, name),
                                   child: const Text("Підключити", style: TextStyle(color: kCyanColor, fontWeight: FontWeight.bold)),
                                 ),
                               ),
@@ -723,22 +425,16 @@ class _DeviceScreenState extends State<DeviceScreen> {
                                   rawName.contains("Vector") || rawName.contains("ESP32") ? Icons.developer_board : Icons.bluetooth,
                                   color: rawName.contains("Vector") ? kGreenColor : kCyanColor,
                                 ),
-                                title: Text(
-                                  name,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: rawName.contains("Vector") ? FontWeight.bold : FontWeight.w600,
-                                  ),
-                                ),
+                                title: Text(name, style: TextStyle(color: Colors.white, fontWeight: rawName.contains("Vector") ? FontWeight.bold : FontWeight.w600)),
                                 subtitle: Text("$mac  ·  ${res.rssi} dBm", style: const TextStyle(color: kSubColor, fontSize: 12)),
                                 trailing: TextButton(
-                                  onPressed: () => _connectToDevice(res.device, name),
+                                  onPressed: () => _ble.connectToDevice(res.device, name),
                                   child: const Text("Підключити", style: TextStyle(color: kCyanColor, fontWeight: FontWeight.bold)),
                                 ),
                               ),
                             );
                           }),
-                        ] else if (_isScanning) ...[
+                        ] else if (_ble.isScanning) ...[
                           const Padding(
                             padding: EdgeInsets.all(32),
                             child: Center(child: CircularProgressIndicator(color: kCyanColor)),

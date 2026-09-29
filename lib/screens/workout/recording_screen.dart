@@ -41,7 +41,6 @@ class _RecordingScreenState extends State<RecordingScreen> with SingleTickerProv
     super.dispose();
   }
 
-  // Якщо підхід зупинено з датчика кнопкою 1 або авто-стопом
   void _checkBleState() {
     if (!_ble.isRecording && mounted) {
       _finishRecording();
@@ -74,7 +73,7 @@ class _RecordingScreenState extends State<RecordingScreen> with SingleTickerProv
                 style: const TextStyle(color: kSubColor, fontSize: 16, fontWeight: FontWeight.w600),
               ),
 
-              // Анімований пульсуючий круг
+              // Пульсуючий круг
               AnimatedBuilder(
                 animation: _animController,
                 builder: (context, child) {
@@ -100,7 +99,7 @@ class _RecordingScreenState extends State<RecordingScreen> with SingleTickerProv
                 },
               ),
 
-              // Нижня кнопка завершення підходу
+              // Кнопка Завершити
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(

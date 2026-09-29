@@ -25,7 +25,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
   String _connectedDeviceName = "Не підключено";
   int _rssi = -65;
   int _pingMs = 15;
+  
+  // Поля акумулятора
   int _batteryPercent = 85;
+  String _batteryVoltage = "3.90V";
 
   // UUIDs згідно з прошивкою ESP32
   final String _serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
@@ -35,6 +38,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
   BluetoothCharacteristic? _dataChar;
   BluetoothCharacteristic? _batteryChar;
   StreamSubscription<List<int>>? _dataSubscription;
+  StreamSubscription<List<int>>? _batterySubscription;
 
   // Поля детальної VBT статистики підходу
   bool _isRecording = false;
@@ -60,6 +64,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
   void dispose() {
     _scanSubscription?.cancel();
     _dataSubscription?.cancel();
+    _batterySubscription?.cancel();
     _cmdController.dispose();
     super.dispose();
   }
@@ -131,6 +136,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
       for (var service in services) {
         if (service.uuid.toString().toLowerCase() == _serviceUuid.toLowerCase()) {
           for (var char in service.characteristics) {
+            // Підписка на якісні/VBT дані
             if (char.uuid.toString().toLowerCase() == _dataCharUuid.toLowerCase()) {
               _dataChar = char;
               await _dataChar!.setNotifyValue(true);
@@ -142,8 +148,17 @@ class _DeviceScreenState extends State<DeviceScreen> {
                 }
               });
             }
+            // Підписка на дані акумулятора (Напруга та Відсотки)
             if (char.uuid.toString().toLowerCase() == _batteryCharUuid.toLowerCase()) {
               _batteryChar = char;
+              await _batteryChar!.setNotifyValue(true);
+              _batterySubscription = _batteryChar!.lastValueStream.listen((value) {
+                if (value.isNotEmpty) {
+                  String payload = utf8.decode(value);
+                  _addLog("Batt: $payload", isTx: false);
+                  _processIncomingBatteryData(payload);
+                }
+              });
             }
           }
         }
@@ -174,6 +189,21 @@ class _DeviceScreenState extends State<DeviceScreen> {
           SnackBar(content: Text("Не вдалося підключитися: $e"), backgroundColor: kRedColor),
         );
       }
+    }
+  }
+
+  void _processIncomingBatteryData(String payload) {
+    // Парсинг формату видачі ESP32 "3.92V,85%" або "3.92V"
+    List<String> parts = payload.split(',');
+    if (parts.length == 2) {
+      setState(() {
+        _batteryVoltage = parts[0];
+        _batteryPercent = int.tryParse(parts[1].replaceAll('%', '')) ?? _batteryPercent;
+      });
+    } else if (payload.contains('V')) {
+      setState(() {
+        _batteryVoltage = payload;
+      });
     }
   }
 
@@ -212,6 +242,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
 
   Future<void> _disconnectDevice() async {
     _dataSubscription?.cancel();
+    _batterySubscription?.cancel();
     if (_connectedDevice != null) {
       await _connectedDevice!.disconnect();
     }
@@ -283,7 +314,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
             ListTile(
               leading: const Icon(Icons.battery_charging_full, color: kGreenColor),
               title: const Text("Заряд батареї", style: TextStyle(color: Colors.white)),
-              subtitle: Text("$_batteryPercent% (3.9V)", style: const TextStyle(color: kSubColor)),
+              subtitle: Text("$_batteryPercent% ($_batteryVoltage)", style: const TextStyle(color: kSubColor)),
             ),
             ListTile(
               leading: const Icon(Icons.speed, color: kCyanColor),
@@ -536,7 +567,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
                         ),
                       ),
 
-                      // БЛОК BLE КОНСОЛІ / ТЕРМІНАЛА LОГІВ
+                      // БЛОК BLE КОНСОЛІ / ТЕРМІНАЛА ЛОГІВ
                       if (_isConnected) ...[
                         const SizedBox(height: 20),
                         Container(

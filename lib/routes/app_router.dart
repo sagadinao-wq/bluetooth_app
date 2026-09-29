@@ -12,41 +12,31 @@ import '../screens/profile/profile_screen.dart';
 import '../constants/app_colors.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
-final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 final appRouter = GoRouter(
-  initialLocation: '/splash',
+  initialLocation: '/workout', // Або '/splash' за вашим вибором
   navigatorKey: _rootNavigatorKey,
   routes: [
     GoRoute(
       path: '/splash',
       builder: (context, state) => const OnboardingScreen(),
     ),
-    ShellRoute(
-      navigatorKey: _shellNavigatorKey,
-      builder: (context, state, child) {
+    
+    // StatefulShellRoute.indexedStack зберігає екрани в пам'яті (Bluetooth не розриватиметься!)
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) {
         return Scaffold(
-          body: child,
+          body: navigationShell,
           bottomNavigationBar: BottomNavigationBar(
             backgroundColor: kCardColor,
             selectedItemColor: kCyanColor,
             unselectedItemColor: kSubColor,
-            currentIndex: _calculateSelectedIndex(state.uri.toString()),
+            currentIndex: navigationShell.currentIndex,
             onTap: (index) {
-              switch (index) {
-                case 0:
-                  context.go('/workout');
-                  break;
-                case 1:
-                  context.go('/history');
-                  break;
-                case 2:
-                  context.go('/device');
-                  break;
-                case 3:
-                  context.go('/profile');
-                  break;
-              }
+              navigationShell.goBranch(
+                index,
+                initialLocation: index == navigationShell.currentIndex,
+              );
             },
             items: const [
               BottomNavigationBarItem(icon: Icon(Icons.fitness_center), label: 'Тренування'),
@@ -57,65 +47,81 @@ final appRouter = GoRouter(
           ),
         );
       },
-      routes: [
-        GoRoute(
-          path: '/workout',
-          builder: (context, state) => const SetupScreen(),
+      branches: [
+        // Вкладка 0: Тренування
+        StatefulShellBranch(
           routes: [
             GoRoute(
-              path: 'calibrate',
-              builder: (context, state) {
-                final m = state.extra as Map<String, dynamic>;
-                return CalibrationScreen(
-                  exercise: m['exercise'] ?? 'Жим',
-                  weight: m['weight'] ?? '60',
-                );
-              },
-            ),
-            GoRoute(
-              path: 'record',
-              builder: (context, state) {
-                final m = state.extra as Map<String, dynamic>;
-                return RecordingScreen(
-                  exercise: m['exercise'] ?? 'Жим',
-                  weight: m['weight'] ?? '60',
-                );
-              },
-            ),
-            GoRoute(
-              path: 'summary',
-              builder: (context, state) {
-                final m = state.extra as Map<String, dynamic>;
-                return SummaryScreen(
-                  exercise: m['exercise'] ?? 'Жим',
-                  weight: m['weight'] ?? '60',
-                  durationMs: m['durationMs'] ?? 0,
-                  samples: m['samples'] ?? 0,
-                );
-              },
+              path: '/workout',
+              builder: (context, state) => const SetupScreen(),
+              routes: [
+                GoRoute(
+                  path: 'calibrate',
+                  builder: (context, state) {
+                    final m = state.extra as Map<String, dynamic>;
+                    return CalibrationScreen(
+                      exercise: m['exercise'] ?? 'Жим',
+                      weight: m['weight'] ?? '60',
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: 'record',
+                  builder: (context, state) {
+                    final m = state.extra as Map<String, dynamic>;
+                    return RecordingScreen(
+                      exercise: m['exercise'] ?? 'Жим',
+                      weight: m['weight'] ?? '60',
+                    );
+                  },
+                ),
+                GoRoute(
+                  path: 'summary',
+                  builder: (context, state) {
+                    final m = state.extra as Map<String, dynamic>;
+                    return SummaryScreen(
+                      exercise: m['exercise'] ?? 'Жим',
+                      weight: m['weight'] ?? '60',
+                      durationMs: m['durationMs'] ?? 0,
+                      samples: m['samples'] ?? 0,
+                    );
+                  },
+                ),
+              ],
             ),
           ],
         ),
-        GoRoute(
-          path: '/history',
-          builder: (context, state) => const HistoryScreen(),
+
+        // Вкладка 1: Історія
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/history',
+              builder: (context, state) => const HistoryScreen(),
+            ),
+          ],
         ),
-        GoRoute(
-          path: '/device',
-          builder: (context, state) => const DeviceScreen(),
+
+        // Вкладка 2: Прилад (Vector VBT Sensor)
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/device',
+              builder: (context, state) => const DeviceScreen(),
+            ),
+          ],
         ),
-        GoRoute(
-          path: '/profile',
-          builder: (context, state) => const ProfileScreen(),
+
+        // Вкладка 3: Профіль
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/profile',
+              builder: (context, state) => const ProfileScreen(),
+            ),
+          ],
         ),
       ],
     ),
   ],
 );
-
-int _calculateSelectedIndex(String location) {
-  if (location.startsWith('/history')) return 1;
-  if (location.startsWith('/device')) return 2;
-  if (location.startsWith('/profile')) return 3;
-  return 0;
-}

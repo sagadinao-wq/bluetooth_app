@@ -14,15 +14,13 @@ import '../constants/app_colors.dart';
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final appRouter = GoRouter(
-  initialLocation: '/workout', // Або '/splash' за вашим вибором
+  initialLocation: '/workout',
   navigatorKey: _rootNavigatorKey,
   routes: [
     GoRoute(
       path: '/splash',
       builder: (context, state) => const OnboardingScreen(),
     ),
-    
-    // StatefulShellRoute.indexedStack зберігає екрани в пам'яті (Bluetooth не розриватиметься!)
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         return Scaffold(
@@ -48,7 +46,6 @@ final appRouter = GoRouter(
         );
       },
       branches: [
-        // Вкладка 0: Тренування
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -58,9 +55,10 @@ final appRouter = GoRouter(
                 GoRoute(
                   path: 'calibrate',
                   builder: (context, state) {
-                    final m = state.extra as Map<String, dynamic>;
+                    final m = state.extra as Map<String, dynamic>? ?? {};
                     return CalibrationScreen(
                       exercise: m['exercise'] ?? 'Жим',
+                      setType: m['setType'] ?? 'Working set',
                       weight: m['weight'] ?? '60',
                     );
                   },
@@ -68,9 +66,10 @@ final appRouter = GoRouter(
                 GoRoute(
                   path: 'record',
                   builder: (context, state) {
-                    final m = state.extra as Map<String, dynamic>;
+                    final m = state.extra as Map<String, dynamic>? ?? {};
                     return RecordingScreen(
                       exercise: m['exercise'] ?? 'Жим',
+                      setType: m['setType'] ?? 'Working set',
                       weight: m['weight'] ?? '60',
                     );
                   },
@@ -78,12 +77,13 @@ final appRouter = GoRouter(
                 GoRoute(
                   path: 'summary',
                   builder: (context, state) {
-                    final m = state.extra as Map<String, dynamic>;
+                    final m = state.extra as Map<String, dynamic>? ?? {};
                     return SummaryScreen(
                       exercise: m['exercise'] ?? 'Жим',
+                      setType: m['setType'] ?? 'Working set',
                       weight: m['weight'] ?? '60',
-                      durationMs: m['durationMs'] ?? 0,
-                      samples: m['samples'] ?? 0,
+                      repCount: m['repCount'] ?? 0,
+                      bestV: m['bestV'] ?? 0.0,
                     );
                   },
                 ),
@@ -91,8 +91,6 @@ final appRouter = GoRouter(
             ),
           ],
         ),
-
-        // Вкладка 1: Історія
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -101,8 +99,6 @@ final appRouter = GoRouter(
             ),
           ],
         ),
-
-        // Вкладка 2: Прилад (Vector VBT Sensor)
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -111,8 +107,6 @@ final appRouter = GoRouter(
             ),
           ],
         ),
-
-        // Вкладка 3: Профіль
         StatefulShellBranch(
           routes: [
             GoRoute(

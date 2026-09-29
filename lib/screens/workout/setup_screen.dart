@@ -41,12 +41,15 @@ class _SetupScreenState extends State<SetupScreen> {
 
   void _onKeyPress(String val) {
     setState(() {
-      if (val == 'C') {
-        _weight = '0';
+      if (val == '.') {
+        // Додаємо крапку тільки якщо її ще немає
+        if (!_weight.contains('.')) {
+          _weight += '.';
+        }
       } else {
-        if (_weight == '0') {
+        if (_weight == '0' && val != '.') {
           _weight = val;
-        } else if (_weight.length < 3) {
+        } else if (_weight.length < 6) { // Збільшено ліміт під дробові ваги (напр. 175.5)
           _weight += val;
         }
       }
@@ -131,7 +134,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
               const SizedBox(height: 14),
 
-              // 2. Перемикач типу підходу з БІЛЬШИМ ТЕКСТОМ
+              // 2. Перемикач типу підходу
               Row(
                 children: [
                   Expanded(
@@ -171,7 +174,7 @@ class _SetupScreenState extends State<SetupScreen> {
                           _weight,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 56,
+                            fontSize: 52, // Трохи зменшено шрифт для комфортного розташування дробових чисел
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -221,7 +224,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
               const Spacer(),
 
-              // 4. Клавіатура розтягнута до низу та по всій ширині
+              // 4. Клавіатура з кнопкою '.' замість 'C'
               Expanded(
                 flex: 5,
                 child: _buildKeypad(),
@@ -258,7 +261,7 @@ class _SetupScreenState extends State<SetupScreen> {
               style: TextStyle(
                 color: isSelected ? Colors.black : Colors.white,
                 fontWeight: FontWeight.bold,
-                fontSize: 16, // Більший текст
+                fontSize: 16,
               ),
             ),
             const SizedBox(height: 4),
@@ -266,7 +269,7 @@ class _SetupScreenState extends State<SetupScreen> {
               subLabel,
               style: TextStyle(
                 color: isSelected ? Colors.black87 : kSubColor,
-                fontSize: 13, // Більший текст
+                fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -281,7 +284,7 @@ class _SetupScreenState extends State<SetupScreen> {
       ['1', '2', '3'],
       ['4', '5', '6'],
       ['7', '8', '9'],
-      ['C', '0', '⌫']
+      ['.', '0', '⌫'] // Замість 'C' стоїть крапка '.'
     ];
 
     return Column(
@@ -303,6 +306,7 @@ class _SetupScreenState extends State<SetupScreen> {
                           setState(() {
                             if (_weight.length > 1) {
                               _weight = _weight.substring(0, _weight.length - 1);
+                              if (_weight.isEmpty) _weight = '0';
                             } else {
                               _weight = '0';
                             }

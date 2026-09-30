@@ -1,22 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../constants/app_colors.dart';
 import '../../services/ble_service.dart';
+
+// Акцентні кольори під оригінальний дизайн
+const kPurpleAccent = Color(0xFF6C22FF);
+const kDarkCardBg = Color(0xFF16161E);
+const kDarkBg = Color(0xFF0D0D12);
+const kSubTextColor = Color(0xFF8E8E93);
 
 class SetupScreen extends StatefulWidget {
   final String exercise;
-  const SetupScreen({super.key, this.exercise = 'Жим'});
+  const SetupScreen({super.key, this.exercise = 'Станова тяга'});
 
   @override
   State<SetupScreen> createState() => _SetupScreenState();
 }
 
 class _SetupScreenState extends State<SetupScreen> {
-  final _exercises = const ['Жим', 'Присід', 'Станова', 'Інша'];
-  int _selectedExercise = 0;
+  final _exercises = const ['Жим лежачи', 'Присідання', 'Станова тяга', 'Інша вправа'];
+  int _selectedExercise = 2; // Станова тяга за замовчуванням
   
+  // Тип підходу: false - Розминка (Warm up), true - Робочий підхід (Working set)
   bool _isWorkingSet = true; 
-  String _weight = '0'; // Стартова вага 0
+  String _weight = '170'; // Початкове значення для демонстрації
 
   final BleService _ble = BleService();
 
@@ -40,15 +46,14 @@ class _SetupScreenState extends State<SetupScreen> {
 
   void _onKeyPress(String val) {
     setState(() {
-      if (val == '.') {
-        // Додаємо крапку тільки якщо її ще немає і довжина < 5
+      if (val == '.' || val == ',') {
         if (!_weight.contains('.') && _weight.length < 5) {
           _weight += '.';
         }
       } else {
         if (_weight == '0' && val != '.') {
           _weight = val;
-        } else if (_weight.length < 5) { // Строге обмеження у 5 символів
+        } else if (_weight.length < 5) { // Обмеження в 5 символів
           _weight += val;
         }
       }
@@ -63,38 +68,48 @@ class _SetupScreenState extends State<SetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBgColor,
+      backgroundColor: kDarkBg,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Верхня панель: Заголовок + Індикатор BLE
+              // 1. Верхня панель зі збереженим статусом підключення BLE
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    "Налаштування підходу",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _exercises[_selectedExercise],
+                        style: const TextStyle(color: kSubTextColor, fontSize: 13),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        "Введіть вагу",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                   GestureDetector(
                     onTap: () => context.go('/device'),
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       child: Container(
-                        width: 18,
-                        height: 18,
+                        width: 16,
+                        height: 16,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: _ble.isConnected ? kGreenColor : kRedColor,
+                          color: _ble.isConnected ? const Color(0xFF34C759) : const Color(0xFFFF3B30),
                           boxShadow: [
                             BoxShadow(
-                              color: (_ble.isConnected ? kGreenColor : kRedColor).withOpacity(0.5),
+                              color: (_ble.isConnected ? const Color(0xFF34C759) : const Color(0xFFFF3B30)).withOpacity(0.5),
                               blurRadius: 8,
                               spreadRadius: 2,
                             ),
@@ -105,53 +120,30 @@ class _SetupScreenState extends State<SetupScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 6),
 
-              // 2. Вибір вправи
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: List.generate(_exercises.length, (i) {
-                    final active = i == _selectedExercise;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(_exercises[i]),
-                        selected: active,
-                        onSelected: (selected) {
-                          if (selected) setState(() => _selectedExercise = i);
-                        },
-                        selectedColor: kCyanColor,
-                        backgroundColor: kCardColor,
-                        labelStyle: TextStyle(
-                          color: active ? Colors.black : Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    );
-                  }),
-                ),
+              const Text(
+                "Оберіть тип підходу для оцінки вашої готовності.",
+                style: TextStyle(color: kSubTextColor, fontSize: 12, height: 1.3),
               ),
+              const SizedBox(height: 16),
 
-              const SizedBox(height: 14),
-
-              // 3. Перемикач типу підходу
+              // 2. Типи підходу (Тільки 2 сети: Розминка / Робочий підхід)
               Row(
                 children: [
                   Expanded(
-                    child: _setTypeButton(
-                      label: "Warm up",
-                      subLabel: "Розминка",
+                    child: _buildRadioSetTile(
+                      title: "Warm up",
+                      subtitle: "Розминка",
                       isSelected: !_isWorkingSet,
                       onTap: () => setState(() => _isWorkingSet = false),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _setTypeButton(
-                      label: "Working set",
-                      subLabel: "Робочий підхід",
+                    child: _buildRadioSetTile(
+                      title: "Working set",
+                      subtitle: "Робочий підхід",
                       isSelected: _isWorkingSet,
                       onTap: () => setState(() => _isWorkingSet = true),
                     ),
@@ -159,55 +151,51 @@ class _SetupScreenState extends State<SetupScreen> {
                 ],
               ),
 
-              // 4. Центральна зона: Введення ваги та кнопка "Далі"
+              // 3. Центральна зона: Введення ваги та кнопка "Далі"
               Expanded(
                 child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: kDarkCardBg,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
                     child: Row(
-                      mainAxisAlignment: _hasValidWeight 
-                          ? MainAxisAlignment.spaceBetween 
-                          : MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        // Показник ваги
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                          decoration: _hasValidWeight 
-                              ? BoxDecoration(
-                                  color: kCardColor,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.white12),
-                                )
-                              : null, // Без рамочки, коли 0
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Text(
-                                _weight,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 54,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                        // Показник ваги з миготливим курсором
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(
+                              _weight,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 52,
+                                fontWeight: FontWeight.bold,
                               ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                "кг",
-                                style: TextStyle(
-                                  color: kSubColor,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            ),
+                            // Вертикальна риска курсору
+                            Container(
+                              margin: const EdgeInsets.only(left: 2, right: 8),
+                              width: 2,
+                              height: 42,
+                              color: kPurpleAccent,
+                            ),
+                            const Text(
+                              "kg",
+                              style: TextStyle(
+                                color: Color(0xFF3A3A4C),
+                                fontSize: 36,
+                                fontWeight: FontWeight.bold,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
 
-                        // Прямокутна кнопка "Далі", що з'являється тільки при вазі > 0
-                        if (_hasValidWeight) ...[
-                          const SizedBox(width: 16),
+                        // Фіолетова кнопка "Далі" (з'являється при вазі > 0)
+                        if (_hasValidWeight)
                           InkWell(
                             onTap: () {
                               context.push(
@@ -219,42 +207,33 @@ class _SetupScreenState extends State<SetupScreen> {
                                 },
                               );
                             },
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(16),
                             child: Container(
-                              width: 100,
-                              height: 90,
+                              width: 72,
+                              height: 120,
                               decoration: BoxDecoration(
-                                color: kCyanColor,
-                                borderRadius: BorderRadius.circular(20),
+                                color: kPurpleAccent,
+                                borderRadius: BorderRadius.circular(16),
                               ),
-                              child: const Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.arrow_forward_rounded, color: Colors.black, size: 28),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    "Далі",
-                                    style: TextStyle(
-                                      color: Colors.black,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ],
+                              child: const Center(
+                                child: Icon(
+                                  Icons.arrow_forward_rounded,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                   ),
                 ),
               ),
 
-              // 5. Приплюснута клавіатура з відступами
+              // 4. Стилізована клавіатура
               SizedBox(
-                height: 230, // Приплюснута висота блоку клавіатури
-                child: _buildKeypad(),
+                height: 240,
+                child: _buildCustomKeypad(),
               ),
             ],
           ),
@@ -263,9 +242,10 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  Widget _setTypeButton({
-    required String label,
-    required String subLabel,
+  // Віджет картки вибору типу підходу
+  Widget _buildRadioSetTile({
+    required String title,
+    required String subtitle,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
@@ -273,32 +253,60 @@ class _SetupScreenState extends State<SetupScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
         decoration: BoxDecoration(
-          color: isSelected ? kCyanColor : kCardColor,
+          color: kDarkCardBg,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? kCyanColor : Colors.white10,
+            color: isSelected ? kPurpleAccent.withOpacity(0.6) : Colors.transparent,
+            width: 1.5,
           ),
         ),
-        child: Column(
+        child: Row(
           children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.black : Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
+            Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? kPurpleAccent : kSubTextColor,
+                  width: 2,
+                ),
               ),
+              child: isSelected
+                  ? Center(
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: kPurpleAccent,
+                        ),
+                      ),
+                    )
+                  : null,
             ),
-            const SizedBox(height: 4),
-            Text(
-              subLabel,
-              style: TextStyle(
-                color: isSelected ? Colors.black87 : kSubColor,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: kSubTextColor,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -306,12 +314,29 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  Widget _buildKeypad() {
+  // Віджет клавіатури
+  Widget _buildCustomKeypad() {
     final keys = [
-      ['1', '2', '3'],
-      ['4', '5', '6'],
-      ['7', '8', '9'],
-      ['.', '0', '⌫']
+      [
+        {'num': '1', 'sub': },
+        {'num': '2', 'sub': },
+        {'num': '3', 'sub': }
+      ],
+      [
+        {'num': '4', 'sub': },
+        {'num': '5', 'sub': },
+        {'num': '6', 'sub': }
+      ],
+      [
+        {'num': '7', 'sub': },
+        {'num': '8', 'sub': },
+        {'num': '9', 'sub': }
+      ],
+      [
+        {'num': ',', 'sub': },
+        {'num': '0', 'sub': },
+        {'num': '⌫', 'sub': }
+      ],
     ];
 
     return Column(
@@ -319,15 +344,18 @@ class _SetupScreenState extends State<SetupScreen> {
         return Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: row.map((key) {
+            children: row.map((item) {
+              final key = item['num']!;
+              final sub = item['sub']!;
+
               return Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(4.0), // Зазори між кнопками
+                  padding: const EdgeInsets.all(3.0),
                   child: Material(
-                    color: kCardColor,
-                    borderRadius: BorderRadius.circular(14),
+                    color: kDarkCardBg,
+                    borderRadius: BorderRadius.circular(12),
                     child: InkWell(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                       onTap: () {
                         if (key == '⌫') {
                           setState(() {
@@ -342,15 +370,28 @@ class _SetupScreenState extends State<SetupScreen> {
                           _onKeyPress(key);
                         }
                       },
-                      child: Center(
-                        child: Text(
-                          key,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            key,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
+                          if (sub.isNotEmpty)
+                            Text(
+                              sub,
+                              style: const TextStyle(
+                                color: kSubTextColor,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),

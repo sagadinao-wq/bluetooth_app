@@ -28,7 +28,7 @@ class _NumberKeyboardSheetState extends State<NumberKeyboardSheet> {
   @override
   void initState() {
     super.initState();
-    _currentValue = widget.initialValue == '—' ? '' : widget.initialValue;
+    _currentValue = (widget.initialValue == '—' || widget.initialValue == '0') ? '' : widget.initialValue;
   }
 
   void _onKeyPress(String val) {
@@ -60,9 +60,9 @@ class _NumberKeyboardSheetState extends State<NumberKeyboardSheet> {
           Text(widget.title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
 
-          // Поле введення з фіолетовим курсором
+          // Поле введення
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
               color: kDarkBg,
               borderRadius: BorderRadius.circular(16),
@@ -74,13 +74,13 @@ class _NumberKeyboardSheetState extends State<NumberKeyboardSheet> {
                 Row(
                   children: [
                     Text(
-                      _currentValue.isEmpty ? '0' : _currentValue,
-                      style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+                      _currentValue.isEmpty ? '—' : _currentValue,
+                      style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
                     Text(
                       widget.unit,
-                      style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 20),
+                      style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 18),
                     ),
                   ],
                 ),
@@ -95,7 +95,7 @@ class _NumberKeyboardSheetState extends State<NumberKeyboardSheet> {
                       color: kPurpleAccent,
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 24),
+                    child: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 22),
                   ),
                 ),
               ],
@@ -103,7 +103,7 @@ class _NumberKeyboardSheetState extends State<NumberKeyboardSheet> {
           ),
           const SizedBox(height: 20),
 
-          // Сітка цифрової клавіатури
+          // Цифрова клавіатура
           Column(
             children: [
               _buildKeyboardRow(['1', '2', '3']),
@@ -130,14 +130,13 @@ class _NumberKeyboardSheetState extends State<NumberKeyboardSheet> {
 
   Widget _buildKeyboardRow(List<String> keys) {
     return Row(
-      children: keys.map((key) {
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 5),
-            child: _buildKeyButton(key, onTap: () => _onKeyPress(key)),
-          ),
-        );
-      }).toList(),
+      children: [
+        _buildKeyButton(keys[0], onTap: () => _onKeyPress(keys[0])),
+        const SizedBox(width: 10),
+        _buildKeyButton(keys[1], onTap: () => _onKeyPress(keys[1])),
+        const SizedBox(width: 10),
+        _buildKeyButton(keys[2], onTap: () => _onKeyPress(keys[2])),
+      ],
     );
   }
 
@@ -150,7 +149,7 @@ class _NumberKeyboardSheetState extends State<NumberKeyboardSheet> {
           onTap: onTap,
           borderRadius: BorderRadius.circular(14),
           child: Container(
-            height: 54,
+            height: 52,
             alignment: Alignment.center,
             child: icon != null
                 ? Icon(icon, color: Colors.white, size: 22)

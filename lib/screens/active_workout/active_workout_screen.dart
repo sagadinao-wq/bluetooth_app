@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/workout_service.dart';
 import 'widgets/hold_button.dart';
-import 'widgets/number_keyboard_sheet.dart';
 import 'set_preparation_screen.dart';
 import 'analysis/set_analysis_screen.dart';
 
@@ -40,31 +39,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (mounted) setState(() {});
   }
 
-  // Накладання клавіатури поверх екрана у вигляді Bottom Sheet
-  void _openKeyboardForSet(WorkoutSetData set, bool isWeight) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return NumberKeyboardSheet(
-          title: isWeight ? "Введіть вагу" : "Введіть повтори",
-          initialValue: isWeight ? set.weight : set.reps,
-          unit: isWeight ? "kg" : "reps",
-          onConfirm: (val) {
-            setState(() {
-              if (isWeight) {
-                set.weight = val;
-              } else {
-                set.reps = val;
-              }
-            });
-          },
-        );
-      },
-    );
-  }
-
   void _startSetFlow(String exerciseName, WorkoutSetData set) async {
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
@@ -78,6 +52,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (result != null && result is Map<String, dynamic>) {
       setState(() {
         set.weight = result['weight'] ?? set.weight;
+        set.reps = result['reps'] ?? '8';
         set.isWarmup = result['isWarmup'] ?? false;
         set.isCompleted = true;
         set.speed = "0.78 м/с";
@@ -253,7 +228,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
-  // Обгортка Dismissible: дозволяє свайпати вліво ДЛЯ ВИДАЛЕННЯ лише якщо вправа згорнута
   Widget _buildDismissibleExerciseCard(int index) {
     final exercise = _workoutService.exercises[index];
     final isExpanded = exercise.isExpanded;
@@ -341,7 +315,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                           SizedBox(width: 30, child: Text("SET", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold))),
                           Expanded(child: Center(child: Text("KG", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
                           Expanded(child: Center(child: Text("REPS", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
-                          SizedBox(width: 70),
+                          SizedBox(width: 80),
                         ],
                       ),
                     ),
@@ -381,7 +355,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Widget _buildSetRow(String exerciseName, WorkoutSetData set) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: set.isCompleted ? kPurpleAccent.withOpacity(0.12) : kDarkBg,
         borderRadius: BorderRadius.circular(12),
@@ -389,6 +363,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       ),
       child: Row(
         children: [
+          // Номер підходу
           SizedBox(
             width: 30,
             child: Text(
@@ -397,44 +372,52 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
 
-          // Поле Ваги
+          // Поле Ваги (прочерк або значення)
           Expanded(
-            child: GestureDetector(
-              onTap: () => _openKeyboardForSet(set, true),
-              child: Container(
-                color: Colors.transparent,
-                child: Center(
-                  child: Text(
-                    set.weight,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                ),
+            child: Center(
+              child: Text(
+                set.weight,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
           ),
 
-          // Поле Повторів
+          // Поле Повторів (прочерк або значення)
           Expanded(
-            child: GestureDetector(
-              onTap: () => _openKeyboardForSet(set, false),
-              child: Container(
-                color: Colors.transparent,
-                child: Center(
-                  child: Text(
-                    set.reps,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                ),
+            child: Center(
+              child: Text(
+                set.reps,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
           ),
 
-          // Кнопки дій для підходу
+          // Права частина: Текст "Розпочати >" АБО Дії виконаного підходу
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Кнопка детального аналізу (З'являється при виконанні)
-              if (set.isCompleted) ...[
+              if (!set.isCompleted) ...[
+                // Кнопка "Розпочати >" з запускним потоком
+                GestureDetector(
+                  onTap: () => _startSetFlow(exerciseName, set),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: kDarkCardBg,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.play_arrow_rounded, color: Colors.white, size: 16),
+                        SizedBox(width: 2),
+                        Icon(Icons.chevron_right_rounded, color: kSubTextColor, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else ...[
+                // Кнопка аналітики 📊
                 GestureDetector(
                   onTap: () {
                     Navigator.of(context).push(
@@ -459,33 +442,29 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                     child: const Text("📊", style: TextStyle(fontSize: 13)),
                   ),
                 ),
-              ],
 
-              // Кнопка Play / Checkmark
-              GestureDetector(
-                onTap: () {
-                  if (!set.isCompleted) {
-                    _startSetFlow(exerciseName, set);
-                  } else {
+                // Зелена галочка виконання
+                GestureDetector(
+                  onTap: () {
                     setState(() {
                       set.isCompleted = false;
                     });
-                  }
-                },
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: set.isCompleted ? const Color(0xFF10B981) : Colors.white12,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    set.isCompleted ? Icons.check_rounded : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 18,
+                  },
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ],

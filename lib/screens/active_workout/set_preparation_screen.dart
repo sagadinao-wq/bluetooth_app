@@ -23,10 +23,12 @@ class SetPreparationScreen extends StatefulWidget {
 
 class _SetPreparationScreenState extends State<SetPreparationScreen> {
   final BleService _ble = BleService();
-  int _step = 1; // 1 = Введення ваги/повторів, 2 = Калібрування
+  int _step = 1; // 1 = Введення даних, 2 = Калібрування (для Sensor Mode)
+  
   bool _isWarmup = true;
-  bool _autoReps = false; // За замовчуванням коліщатко активне
-  int _selectedReps = 0;  // Коліщатко стоїть на 0
+  bool _isSensorMode = true; // true = Sensor Mode, false = Manual Mode
+  bool _autoReps = false;    // Автовизначення
+  int _selectedReps = 0;     // Початкове значення коліщатка = 0
   late String _weight;
 
   bool _isWeightFocused = true;
@@ -34,7 +36,6 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
   @override
   void initState() {
     super.initState();
-    // Якщо вага не була передана — ставимо прочерки за замовчуванням
     _weight = (widget.initialWeight == '—' || widget.initialWeight == '0' || widget.initialWeight.isEmpty)
         ? '—'
         : widget.initialWeight;
@@ -54,13 +55,11 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
   void _onKeyPress(String val) {
     if (!_isWeightFocused) return;
     setState(() {
-      // Якщо зараз стоять прочерки — очищаємо їх при першому натисканні цифри
       if (_weight == '—') {
         if (val == '.') return;
         _weight = val;
       } else {
         if (val == '.' && _weight.contains('.')) return;
-        // Обмеження максимум 5 символів
         if (_weight.length < 5) {
           _weight += val;
         }
@@ -81,18 +80,27 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
   }
 
   void _proceedToNextStep() {
-    if (!_ble.isConnected) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Прилад не підключено! Перехід у меню приладу..."),
-          backgroundColor: Colors.redAccent,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      context.go('/device');
-      return;
+    if (_isSensorMode) {
+      if (!_ble.isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Прилад не підключено! Перехід у меню приладу..."),
+            backgroundColor: Colors.redAccent,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        context.go('/device');
+        return;
+      }
+      setState(() => _step = 2);
+    } else {
+      // Manual Mode: одразу зберігаємо без датчика та калібрування
+      Navigator.of(context).pop({
+        'weight': _weight == '—' ? '0' : _weight,
+        'isWarmup': _isWarmup,
+        'reps': '$_selectedReps',
+      });
     }
-    setState(() => _step = 2);
   }
 
   @override
@@ -100,46 +108,39 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
     return Scaffold(
       backgroundColor: kDarkBg,
       body: SafeArea(
-        child: _step == 1 ? _buildStep1WeightAndRepsInput() : _buildStep2Calibration(),
+        child: _step == 1 ? _buildStep1Input() : _buildStep2Calibration(),
       ),
     );
   }
 
-  // ЕКРАН 1: Об'єднаний блок (Вага за замовчуванням '—', Коліщатко на 0, Кнопка далі)
-  Widget _buildStep1WeightAndRepsInput() {
+  Widget _buildStep1Input() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Шапка з індикатором стану датчика
+        // 1. Верхня шапка: Назад (ліворуч) та Статус датчика (праворуч)
         Padding(
-          padding: const EdgeInsets.only(left: 20, right: 20, top: 16, bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.exerciseName,
-                    style: const TextStyle(color: kSubTextColor, fontSize: 13, fontWeight: FontWeight.w500),
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    color: kDarkCardBg,
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    "Введіть вагу",
-                    style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
-                  ),
-                ],
+                  child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
+                ),
               ),
-
-              // Клікабельний плашка-статус датчика
               GestureDetector(
                 onTap: () => context.go('/device'),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: kDarkCardBg,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: _ble.isConnected ? const Color(0xFF10B981).withOpacity(0.5) : Colors.redAccent.withOpacity(0.5),
                     ),
@@ -154,10 +155,10 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
                           shape: BoxShape.circle,
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 8),
                       Text(
                         _ble.isConnected ? "85% • 12ms" : "Відключено",
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -166,9 +167,28 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
             ],
           ),
         ),
+
+        // Назва вправи та заголовок
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.exerciseName,
+                style: const TextStyle(color: kSubTextColor, fontSize: 13, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 2),
+              const Text(
+                "Параметри підходу",
+                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 12),
 
-        // Перемикач Warm up / Working set
+        // 2. Перемикач типу підходу: Warm up / Working set
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(
@@ -183,9 +203,61 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
 
-        // ГОЛОВНИЙ ПОЄДНАНИЙ БЛОК
+        // 3. Плашка вибору режиму зі стрілками (Sensor Mode vs Manual Mode)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: kDarkCardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: kPurpleAccent.withOpacity(0.3)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      onPressed: () => setState(() {
+                        _isSensorMode = !_isSensorMode;
+                        if (!_isSensorMode) _autoReps = false;
+                      }),
+                      icon: const Icon(Icons.chevron_left_rounded, color: Colors.white, size: 24),
+                    ),
+                    Expanded(
+                      child: Text(
+                        _isSensorMode ? "Sensor Mode (VBT Tracking)" : "Manual Mode (Manual Entry)",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => setState(() {
+                        _isSensorMode = !_isSensorMode;
+                        if (!_isSensorMode) _autoReps = false;
+                      }),
+                      icon: const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 24),
+                    ),
+                  ],
+                ),
+                Text(
+                  _isSensorMode
+                      ? "Автоматичний трекінг повторів та швидкості за допомогою датчика. Дані датчика мають найвищий пріоритет."
+                      : "Ручний режим запису без використання датчика.",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: kSubTextColor, fontSize: 11, height: 1.2),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const Spacer(),
+
+        // 4. Головний блок: Вага + Зациклене коліщатко повторів + Далі ->
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 20),
           padding: const EdgeInsets.all(16),
@@ -196,7 +268,7 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
           ),
           child: Row(
             children: [
-              // 1. Введення ваги (Прочерки за замовчуванням + Курсор)
+              // Вага
               Expanded(
                 flex: 5,
                 child: GestureDetector(
@@ -221,17 +293,17 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
                           children: [
                             Text(
                               _weight,
-                              style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold),
+                              style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
                             ),
                             if (_isWeightFocused)
                               Container(
                                 width: 2,
-                                height: 26,
+                                height: 24,
                                 margin: const EdgeInsets.only(left: 2),
                                 color: kPurpleAccent,
                               ),
                             const SizedBox(width: 4),
-                            const Text("kg", style: TextStyle(color: kSubTextColor, fontSize: 16)),
+                            const Text("kg", style: TextStyle(color: kSubTextColor, fontSize: 15)),
                           ],
                         ),
                       ],
@@ -244,7 +316,7 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
               Container(width: 1, height: 50, color: Colors.white10),
               const SizedBox(width: 8),
 
-              // 2. Коліщатко повторів (Починається з 0)
+              // Коліщатко повторів (Крутиться в обидві сторони)
               Expanded(
                 flex: 4,
                 child: Column(
@@ -254,16 +326,21 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
                       children: [
                         const Text("Повтори", style: TextStyle(color: kSubTextColor, fontSize: 11)),
                         GestureDetector(
-                          onTap: () => setState(() => _autoReps = !_autoReps),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: _autoReps ? kPurpleAccent : Colors.white10,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              "Авто",
-                              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          onTap: _isSensorMode
+                              ? () => setState(() => _autoReps = !_autoReps)
+                              : null,
+                          child: Opacity(
+                            opacity: _isSensorMode ? 1.0 : 0.4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _autoReps ? kPurpleAccent : Colors.white10,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                "Авто",
+                                style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
                             ),
                           ),
                         ),
@@ -286,15 +363,15 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
                               diameterRatio: 1.2,
                               physics: const FixedExtentScrollPhysics(),
                               onSelectedItemChanged: (index) {
-                                setState(() => _selectedReps = index);
+                                setState(() => _selectedReps = index % 31);
                               },
                               childDelegate: ListWheelChildBuilderDelegate(
-                                childCount: 31, // Від 0 до 30
                                 builder: (context, index) {
-                                  final isSelected = index == _selectedReps;
+                                  final actualValue = (index % 31).abs();
+                                  final isSelected = actualValue == _selectedReps;
                                   return Center(
                                     child: Text(
-                                      "$index",
+                                      "$actualValue",
                                       style: TextStyle(
                                         color: isSelected ? Colors.white : kSubTextColor,
                                         fontSize: isSelected ? 20 : 14,
@@ -312,7 +389,7 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
 
               const SizedBox(width: 8),
 
-              // 3. Фіолетова кнопка далі ->
+              // Кнопка далі ->
               GestureDetector(
                 onTap: _proceedToNextStep,
                 child: Container(
@@ -329,9 +406,9 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
           ),
         ),
 
-        const Spacer(),
+        const SizedBox(height: 12),
 
-        // Кастомна клавіатура
+        // 5. Цифрова клавіатура
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -402,7 +479,7 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
     );
   }
 
-  // ЕКРАН 2: Калібрування
+  // Екран 2: Калібрування
   Widget _buildStep2Calibration() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),

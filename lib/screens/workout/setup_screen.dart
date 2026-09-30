@@ -65,6 +65,23 @@ class _SetupScreenState extends State<SetupScreen> {
     return parsed > 0;
   }
 
+  void _handleNextStep() {
+    if (!_ble.isConnected) {
+      // Якщо сенсор не підключено — перенаправляємо на екран пристрою
+      context.go('/device');
+    } else {
+      // Якщо підключено — переходимо до калібрування
+      context.push(
+        '/workout/calibrate',
+        extra: {
+          'exercise': _exercises[_selectedExercise],
+          'setType': _isWorkingSet ? 'Working set' : 'Warm up',
+          'weight': _weight,
+        },
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -194,16 +211,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
                         if (_hasValidWeight)
                           InkWell(
-                            onTap: () {
-                              context.push(
-                                '/workout/calibrate',
-                                extra: {
-                                  'exercise': _exercises[_selectedExercise],
-                                  'setType': _isWorkingSet ? 'Working set' : 'Warm up',
-                                  'weight': _weight,
-                                },
-                              );
-                            },
+                            onTap: _handleNextStep,
                             borderRadius: BorderRadius.circular(16),
                             child: Container(
                               width: 72,

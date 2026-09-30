@@ -4,6 +4,7 @@ import '../../services/workout_service.dart';
 import 'widgets/hold_button.dart';
 import 'widgets/number_keyboard_sheet.dart';
 import 'set_preparation_screen.dart';
+import 'analysis/set_analysis_screen.dart';
 
 const kPurpleAccent = Color(0xFF6C22FF);
 const kDarkCardBg = Color(0xFF16161E);
@@ -23,7 +24,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void initState() {
     super.initState();
-    // Обов'язково запускаємо тренування при переході на екран
     if (!_workoutService.isWorkoutActive) {
       _workoutService.startWorkout();
     }
@@ -40,6 +40,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (mounted) setState(() {});
   }
 
+  // Накладання клавіатури поверх екрана у вигляді Bottom Sheet
   void _openKeyboardForSet(WorkoutSetData set, bool isWeight) {
     showModalBottomSheet(
       context: context,
@@ -106,7 +107,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                             child: _buildAddExerciseButton(),
                           );
                         }
-                        return _buildExerciseCard(index);
+                        return _buildDismissibleExerciseCard(index);
                       },
                     ),
             ),
@@ -208,14 +209,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
-  // Порожній стан із виразнішою гантеллю та відступами кнопки
   Widget _buildEmptyState() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Column(
         children: [
           const Spacer(),
-          // Більша гантелька
           Icon(
             Icons.fitness_center_rounded,
             color: kSubTextColor.withOpacity(0.6),
@@ -227,7 +226,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             style: TextStyle(color: kSubTextColor, fontSize: 16, fontWeight: FontWeight.w500),
           ),
           const Spacer(),
-          // Кнопка в повітрі
           _buildAddExerciseButton(),
           const SizedBox(height: 12),
         ],
@@ -252,6 +250,31 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
+    );
+  }
+
+  // Обгортка Dismissible: дозволяє свайпати вліво ДЛЯ ВИДАЛЕННЯ лише якщо вправа згорнута
+  Widget _buildDismissibleExerciseCard(int index) {
+    final exercise = _workoutService.exercises[index];
+    final isExpanded = exercise.isExpanded;
+
+    return Dismissible(
+      key: ValueKey("exercise_${exercise.name}_$index"),
+      direction: isExpanded ? DismissDirection.none : DismissDirection.endToStart,
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Colors.redAccent.withOpacity(0.85),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        alignment: Alignment.centerRight,
+        child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 28),
+      ),
+      onDismissed: (direction) {
+        _workoutService.removeExercise(index);
+      },
+      child: _buildExerciseCard(index),
     );
   }
 
@@ -318,7 +341,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                           SizedBox(width: 30, child: Text("SET", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold))),
                           Expanded(child: Center(child: Text("KG", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
                           Expanded(child: Center(child: Text("REPS", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
-                          SizedBox(width: 44),
+                          SizedBox(width: 70),
                         ],
                       ),
                     ),
@@ -362,6 +385,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       decoration: BoxDecoration(
         color: set.isCompleted ? kPurpleAccent.withOpacity(0.12) : kDarkBg,
         borderRadius: BorderRadius.circular(12),
+        border: set.isCompleted ? Border.all(color: kPurpleAccent.withOpacity(0.3)) : null,
       ),
       child: Row(
         children: [
@@ -405,22 +429,64 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
 
-          // Кнопка запуску підходу
-          GestureDetector(
-            onTap: () => _startSetFlow(exerciseName, set),
-            child: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: set.isCompleted ? const Color(0xFF10B981) : Colors.white12,
-                shape: BoxShape.circle,
+          // Кнопки дій для підходу
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Кнопка детального аналізу (З'являється при виконанні)
+              if (set.isCompleted) ...[
+                GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => SetAnalysisScreen(
+                          exerciseName: exerciseName,
+                          setNumber: set.setNumber,
+                          weight: set.weight,
+                          reps: set.reps,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    margin: const EdgeInsets.only(right: 6),
+                    decoration: BoxDecoration(
+                      color: kPurpleAccent.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: kPurpleAccent.withOpacity(0.4)),
+                    ),
+                    child: const Text("📊", style: TextStyle(fontSize: 13)),
+                  ),
+                ),
+              ],
+
+              // Кнопка Play / Checkmark
+              GestureDetector(
+                onTap: () {
+                  if (!set.isCompleted) {
+                    _startSetFlow(exerciseName, set);
+                  } else {
+                    setState(() {
+                      set.isCompleted = false;
+                    });
+                  }
+                },
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: set.isCompleted ? const Color(0xFF10B981) : Colors.white12,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    set.isCompleted ? Icons.check_rounded : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
               ),
-              child: Icon(
-                set.isCompleted ? Icons.check_rounded : Icons.play_arrow_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
+            ],
           ),
         ],
       ),

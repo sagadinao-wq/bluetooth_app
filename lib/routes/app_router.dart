@@ -38,82 +38,75 @@ final appRouter = GoRouter(
               bottomNavigationBar: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Згладжена плашка активного тренування
+                  // Повноширинна плашка з закругленням ТІЛЬКИ верхніх кутів
                   if (isWorkoutActive && !isCurrentWorkoutRoute)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: kDarkCardBg,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white10, width: 0.8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.4),
-                              blurRadius: 10,
-                              offset: const Offset(0, -2),
-                            ),
-                          ],
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: const BoxDecoration(
+                        color: kDarkCardBg,
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                        border: Border(
+                          top: BorderSide(color: Colors.white10, width: 0.8),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: const BoxDecoration(
-                                    color: kPurpleAccent,
-                                    shape: BoxShape.circle,
-                                  ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: kPurpleAccent,
+                                  shape: BoxShape.circle,
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  "Тренування триває",
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                "Тренування триває",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              TextButton.icon(
+                                onPressed: () => context.go('/workout'),
+                                icon: const Icon(Icons.play_arrow_rounded, color: kPurpleAccent, size: 18),
+                                label: const Text(
+                                  "Продовжити",
                                   style: TextStyle(
-                                    color: Colors.white,
+                                    color: kPurpleAccent,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                   ),
                                 ),
-                              ],
-                            ),
-                            Row(
-                              children: [
-                                TextButton.icon(
-                                  onPressed: () => context.go('/workout'),
-                                  icon: const Icon(Icons.play_arrow_rounded, color: kPurpleAccent, size: 18),
-                                  label: const Text(
-                                    "Продовжити",
-                                    style: TextStyle(
-                                      color: kPurpleAccent,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
+                              ),
+                              const SizedBox(width: 6),
+                              GestureDetector(
+                                onTap: () => _showCancelWorkoutDialog(context, workoutService),
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent.withOpacity(0.15),
+                                    shape: BoxShape.circle,
                                   ),
+                                  child: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 16),
                                 ),
-                                const SizedBox(width: 4),
-                                GestureDetector(
-                                  onTap: () => _showCancelWorkoutDialog(context, workoutService),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.redAccent.withOpacity(0.15),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 16),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
 
-                  // Основний BottomNavigationBar
+                  // BottomNavigationBar
                   Container(
                     decoration: const BoxDecoration(
                       color: kDarkCardBg,
@@ -266,7 +259,6 @@ final appRouter = GoRouter(
   ],
 );
 
-// Модальне вікно підтвердження скасування з кнопки
 void _showCancelWorkoutDialog(BuildContext context, WorkoutService workoutService) {
   showDialog(
     context: context,
@@ -289,8 +281,6 @@ void _showCancelWorkoutDialog(BuildContext context, WorkoutService workoutServic
                 ),
               ),
               const SizedBox(height: 20),
-              
-              // Кнопка переривання із заповненням кольором при утриманні
               HoldButton(
                 icon: Icons.stop_rounded,
                 fillColor: Colors.redAccent,
@@ -300,8 +290,6 @@ void _showCancelWorkoutDialog(BuildContext context, WorkoutService workoutServic
                 },
               ),
               const SizedBox(height: 12),
-              
-              // Кнопка продовжити
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),
                 child: const Text(

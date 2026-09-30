@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/workout_service.dart';
+import '../../services/ble_service.dart';
 import 'widgets/hold_button.dart';
 import 'set_preparation_screen.dart';
 import 'analysis/set_analysis_screen.dart';
@@ -19,6 +20,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
 
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   final WorkoutService _workoutService = WorkoutService();
+  final BleService _bleService = BleService();
 
   @override
   void initState() {
@@ -27,11 +29,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _workoutService.startWorkout();
     }
     _workoutService.addListener(_onServiceUpdate);
+    _bleService.addListener(_onServiceUpdate);
   }
 
   @override
   void dispose() {
     _workoutService.removeListener(_onServiceUpdate);
+    _bleService.removeListener(_onServiceUpdate);
     super.dispose();
   }
 
@@ -45,6 +49,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         builder: (context) => SetPreparationScreen(
           exerciseName: exerciseName,
           initialWeight: set.weight,
+          initialReps: set.reps, // Передаємо підтягнуті повтори
         ),
       ),
     );
@@ -52,7 +57,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (result != null && result is Map<String, dynamic>) {
       setState(() {
         set.weight = result['weight'] ?? set.weight;
-        set.reps = result['reps'] ?? '8';
+        set.reps = result['reps'] ?? 'AUTO';
         set.isWarmup = result['isWarmup'] ?? false;
         set.isCompleted = true;
         set.speed = "0.78 м/с";
@@ -101,6 +106,38 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           IconButton(
             onPressed: () => context.go('/home'),
             icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 32),
+          ),
+          GestureDetector(
+            onTap: () => context.go('/device'),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: kDarkCardBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _bleService.isConnected
+                      ? const Color(0xFF10B981).withOpacity(0.4)
+                      : Colors.redAccent.withOpacity(0.4),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: _bleService.isConnected ? const Color(0xFF10B981) : Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _bleService.isConnected ? "85% • 12ms" : "Датчик відключено",
+                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 24),
@@ -363,7 +400,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       ),
       child: Row(
         children: [
-          // Номер підходу
           SizedBox(
             width: 30,
             child: Text(
@@ -371,8 +407,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               style: TextStyle(color: set.isWarmup ? Colors.orangeAccent : Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
-
-          // Поле Ваги (прочерк або значення)
           Expanded(
             child: Center(
               child: Text(
@@ -381,8 +415,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ),
             ),
           ),
-
-          // Поле Повторів (прочерк або значення)
           Expanded(
             child: Center(
               child: Text(
@@ -391,13 +423,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ),
             ),
           ),
-
-          // Права частина: Текст "Розпочати >" АБО Дії виконаного підходу
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (!set.isCompleted) ...[
-                // Кнопка "Розпочати >" з запускним потоком
                 GestureDetector(
                   onTap: () => _startSetFlow(exerciseName, set),
                   child: Container(
@@ -417,7 +446,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   ),
                 ),
               ] else ...[
-                // Кнопка аналітики 📊
                 GestureDetector(
                   onTap: () {
                     Navigator.of(context).push(
@@ -442,8 +470,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                     child: const Text("📊", style: TextStyle(fontSize: 13)),
                   ),
                 ),
-
-                // Зелена галочка виконання
                 GestureDetector(
                   onTap: () {
                     setState(() {

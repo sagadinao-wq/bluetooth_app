@@ -81,14 +81,26 @@ class WorkoutService extends ChangeNotifier {
     }
   }
 
+  // Додавання підходу з підтягуванням даних попереднього підходу в цій же вправі
   void addSet(int exerciseIndex) {
     if (exerciseIndex >= 0 && exerciseIndex < exercises.length) {
       final ex = exercises[exerciseIndex];
+      
+      String previousWeight = '—';
+      String previousReps = '—';
+
+      // Якщо у цій вправі вже є підходи — копіюємо значення останнього
+      if (ex.sets.isNotEmpty) {
+        final lastSet = ex.sets.last;
+        previousWeight = lastSet.weight;
+        previousReps = lastSet.reps;
+      }
+
       ex.sets.add(
         WorkoutSetData(
           setNumber: ex.sets.length + 1,
-          weight: '—',
-          reps: '—',
+          weight: previousWeight,
+          reps: previousReps,
         ),
       );
       notifyListeners();

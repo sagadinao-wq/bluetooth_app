@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../screens/home/home_screen.dart';
-import '../screens/workout/setup_screen.dart';
+import '../screens/active_workout/active_workout_screen.dart';
 import '../screens/workout/calibration_screen.dart';
 import '../screens/workout/recording_screen.dart';
 import '../screens/workout/summary_screen.dart';
@@ -87,14 +87,14 @@ final appRouter = GoRouter(
             ),
           ],
         ),
-        // 2. Тренування з плавним переходом
+        // 2. Тренування з плавним переходом на новий повноцінний ActiveWorkoutScreen
         StatefulShellBranch(
           routes: [
             GoRoute(
               path: '/workout',
               pageBuilder: (context, state) => CustomTransitionPage(
                 key: state.pageKey,
-                child: const SetupScreen(),
+                child: const ActiveWorkoutScreen(),
                 transitionDuration: const Duration(milliseconds: 350),
                 reverseTransitionDuration: const Duration(milliseconds: 300),
                 transitionsBuilder: (context, animation, secondaryAnimation, child) {

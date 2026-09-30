@@ -60,12 +60,18 @@ class WorkoutService extends ChangeNotifier {
   }
 
   void addExercise(String name) {
-    // Якщо тренування ще не було активним — обов'язково стартуємо його при додаванні першої вправи
     if (!_isWorkoutActive) {
       startWorkout();
     }
     exercises.add(ActiveExercise(name: name));
     notifyListeners();
+  }
+
+  void removeExercise(int index) {
+    if (index >= 0 && index < exercises.length) {
+      exercises.removeAt(index);
+      notifyListeners();
+    }
   }
 
   void toggleExerciseExpanded(int index) {

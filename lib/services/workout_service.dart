@@ -11,8 +11,8 @@ class WorkoutSetData {
 
   WorkoutSetData({
     required this.setNumber,
-    this.weight = '0',
-    this.reps = '0',
+    this.weight = '—',
+    this.reps = '—',
     this.speed,
     this.isCompleted = false,
     this.isWarmup = false,
@@ -39,7 +39,6 @@ class WorkoutService extends ChangeNotifier {
   bool _isWorkoutActive = false;
   bool get isWorkoutActive => _isWorkoutActive;
 
-  DateTime? _startTime;
   Timer? _timer;
   int _elapsedSeconds = 0;
   int get elapsedSeconds => _elapsedSeconds;
@@ -49,7 +48,6 @@ class WorkoutService extends ChangeNotifier {
   void startWorkout() {
     if (_isWorkoutActive) return;
     _isWorkoutActive = true;
-    _startTime = DateTime.now();
     _elapsedSeconds = 0;
     exercises.clear();
 
@@ -76,12 +74,11 @@ class WorkoutService extends ChangeNotifier {
   void addSet(int exerciseIndex) {
     if (exerciseIndex >= 0 && exerciseIndex < exercises.length) {
       final ex = exercises[exerciseIndex];
-      final lastSet = ex.sets.isNotEmpty ? ex.sets.last : null;
       ex.sets.add(
         WorkoutSetData(
           setNumber: ex.sets.length + 1,
-          weight: lastSet?.weight ?? '60',
-          reps: lastSet?.reps ?? '8',
+          weight: '—', // Прочерки за замовчуванням
+          reps: '—',   // Прочерки за замовчуванням
         ),
       );
       notifyListeners();

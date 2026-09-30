@@ -49,7 +49,12 @@ class _NumberKeyboardSheetState extends State<NumberKeyboardSheet> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).padding.bottom + 20,
+      ),
       decoration: const BoxDecoration(
         color: kDarkCardBg,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -57,6 +62,17 @@ class _NumberKeyboardSheetState extends State<NumberKeyboardSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Індикатор перетягування (Drag handle)
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          
           Text(widget.title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
 

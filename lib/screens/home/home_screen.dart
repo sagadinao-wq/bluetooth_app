@@ -99,7 +99,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: () => context.go('/workout'),
+                        onTap: () async {
+                          await Future.delayed(const Duration(milliseconds: 80));
+                          if (context.mounted) {
+                            context.go('/workout');
+                          }
+                        },
                         borderRadius: BorderRadius.circular(20),
                         child: Container(
                           padding: const EdgeInsets.all(16),
@@ -214,13 +219,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         children: [
-          // Шапка з назвою місяця по центру та стрілочками ВПРИТУЛ
+          // Шапка з назвою місяця по центру та стрілочками впритул
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Стрілочка вліво впритул
                 GestureDetector(
                   onTap: () => _changeDay(-1),
                   child: const Padding(
@@ -228,8 +232,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Icon(Icons.arrow_back_ios_rounded, color: kPurpleAccent, size: 18),
                   ),
                 ),
-
-                // Назва місяця по центру (клікабельна без залишків стрілочок розгортання)
                 GestureDetector(
                   onTap: () => setState(() => _isCalendarExpanded = !_isCalendarExpanded),
                   child: AnimatedSwitcher(
@@ -246,8 +248,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-
-                // Стрілочка вправо впритул
                 GestureDetector(
                   onTap: () => _changeDay(1),
                   child: const Padding(
@@ -275,9 +275,9 @@ class _HomeScreenState extends State<HomeScreen> {
               onHorizontalDragEnd: (details) {
                 if (details.primaryVelocity != null) {
                   if (details.primaryVelocity! < 0) {
-                    _changeMonth(1); // Свайп вліво по всій сітці -> наступний місяць
+                    _changeMonth(1);
                   } else if (details.primaryVelocity! > 0) {
-                    _changeMonth(-1); // Свайп вправо по всій сітці -> попередній місяць
+                    _changeMonth(-1);
                   }
                 }
               },
@@ -365,7 +365,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   decoration: BoxDecoration(
                     color: isPurple ? kPurpleAccent : kDarkBg,
                     shape: BoxShape.circle,
-                    // Підсвітка білим обводком при натисканні
                     border: isSelected ? Border.all(color: Colors.white, width: 2) : null,
                     boxShadow: isPurple
                         ? [
@@ -444,7 +443,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   decoration: BoxDecoration(
                     color: isPurple ? kPurpleAccent : kDarkBg,
                     shape: BoxShape.circle,
-                    // Білий кружечок/обводок підсвічування обраної дати
                     border: isSelected ? Border.all(color: Colors.white, width: 2) : null,
                   ),
                   child: Center(

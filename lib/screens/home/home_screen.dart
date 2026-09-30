@@ -19,7 +19,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   late DateTime _today;
   late DateTime _selectedDate;
+  
   late PageController _weekPageController;
+  late PageController _monthPageController;
 
   final List<String> _monthsUa = [
     'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -28,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<String> _weekDaysUa = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'];
 
-  // Дні поточного місяця з тренуваннями
+  // Дні з тренуваннями для прикладу
   final Set<int> _workoutDays = {3, 8, 12, 15, 21, 25, 28};
 
   final BleService _ble = BleService();
@@ -38,13 +40,17 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _today = DateTime.now();
     _selectedDate = DateTime(_today.year, _today.month, _today.day);
+    
     _weekPageController = PageController(initialPage: 1000);
+    _monthPageController = PageController(initialPage: 1000);
+
     _ble.addListener(_onBleUpdate);
   }
 
   @override
   void dispose() {
     _weekPageController.dispose();
+    _monthPageController.dispose();
     _ble.removeListener(_onBleUpdate);
     super.dispose();
   }
@@ -57,15 +63,34 @@ class _HomeScreenState extends State<HomeScreen> {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  void _changeDay(int offset) {
-    setState(() {
-      _selectedDate = _selectedDate.add(Duration(days: offset));
-    });
+  // Автоматичне оновлення місяця у шапці при свайпі тижнів
+  void _onWeekPageChanged(int pageIndex) {
+    final pageOffset = pageIndex - 1000;
+    final currentMonday = _today.subtract(Duration(days: _today.weekday - 1)).add(Duration(days: pageOffset * 7));
+    final midWeekDay = currentMonday.add(const Duration(days: 3)); // Четвер як центр тижня
+    
+    if (midWeekDay.month != _selectedDate.month || midWeekDay.year != _selectedDate.year) {
+      setState(() {
+        _selectedDate = DateTime(
+          midWeekDay.year, 
+          midWeekDay.month, 
+          _selectedDate.day.clamp(1, DateUtils.getDaysInMonth(midWeekDay.year, midWeekDay.month))
+        );
+      });
+    }
   }
 
-  void _changeMonth(int offset) {
+  // Автоматичне оновлення місяця при свайпі розгорнутого календаря
+  void _onMonthPageChanged(int pageIndex) {
+    final pageOffset = pageIndex - 1000;
+    final targetMonth = DateTime(_today.year, _today.month + pageOffset, 1);
+    
     setState(() {
-      _selectedDate = DateTime(_selectedDate.year, _selectedDate.month + offset, 1);
+      _selectedDate = DateTime(
+        targetMonth.year, 
+        targetMonth.month, 
+        _selectedDate.day.clamp(1, DateUtils.getDaysInMonth(targetMonth.year, targetMonth.month))
+      );
     });
   }
 
@@ -95,12 +120,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 8),
 
-                    // Світліша виділена картка швидкого старту
+                    // Виділена картка швидкого старту
                     Material(
                       color: Colors.transparent,
                       child: InkWell(
                         onTap: () async {
-                          await Future.delayed(const Duration(milliseconds: 80));
+                          await Future.delayed(const Duration(milliseconds: 60));
                           if (context.mounted) {
                             context.go('/workout');
                           }
@@ -219,88 +244,50 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         children: [
-          // Шапка з назвою місяця по центру та стрілочками впритул
+          // Чиста назва місяця по центру
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                GestureDetector(
-                  onTap: () => _changeDay(-1),
-                  child: const Padding(
-                    padding: EdgeInsets.only(right: 12.0),
-                    child: Icon(Icons.arrow_back_ios_rounded, color: kPurpleAccent, size: 18),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: GestureDetector(
+                onTap: () => setState(() => _isCalendarExpanded = !_isCalendarExpanded),
+                child: Text(
+                  monthName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                   ),
-                ),
-                GestureDetector(
-                  onTap: () => setState(() => _isCalendarExpanded = !_isCalendarExpanded),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
-                    child: Text(
-                      monthName,
-                      key: ValueKey(monthName),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => _changeDay(1),
-                  child: const Padding(
-                    padding: EdgeInsets.only(left: 12.0),
-                    child: Icon(Icons.arrow_forward_ios_rounded, color: kPurpleAccent, size: 18),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Перемикач: Згорнута стрічка АБО Розгорнута сітка
-          AnimatedCrossFade(
-            firstChild: SizedBox(
-              height: 70,
-              child: PageView.builder(
-                controller: _weekPageController,
-                itemBuilder: (context, pageIndex) {
-                  return _buildWeekPage(pageIndex);
-                },
-              ),
-            ),
-            secondChild: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragEnd: (details) {
-                if (details.primaryVelocity != null) {
-                  if (details.primaryVelocity! < 0) {
-                    _changeMonth(1);
-                  } else if (details.primaryVelocity! > 0) {
-                    _changeMonth(-1);
-                  }
-                }
-              },
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                transitionBuilder: (child, anim) => FadeTransition(
-                  opacity: anim,
-                  child: SlideTransition(
-                    position: Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero).animate(anim),
-                    child: child,
-                  ),
-                ),
-                child: KeyedSubtree(
-                  key: ValueKey("${_selectedDate.year}-${_selectedDate.month}"),
-                  child: _buildDynamicMonthGrid(),
                 ),
               ),
             ),
-            crossFadeState: _isCalendarExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 300),
           ),
 
-          // Ручка-індикатор для потягування
+          // Перемикання: Згорнутий тиждень АБО Повний календар місяця
+          _isCalendarExpanded
+              ? SizedBox(
+                  height: 280,
+                  child: PageView.builder(
+                    controller: _monthPageController,
+                    onPageChanged: _onMonthPageChanged,
+                    itemBuilder: (context, pageIndex) {
+                      final pageOffset = pageIndex - 1000;
+                      final monthDate = DateTime(_today.year, _today.month + pageOffset, 1);
+                      return _buildMonthGridForDate(monthDate);
+                    },
+                  ),
+                )
+              : SizedBox(
+                  height: 70,
+                  child: PageView.builder(
+                    controller: _weekPageController,
+                    onPageChanged: _onWeekPageChanged,
+                    itemBuilder: (context, pageIndex) {
+                      return _buildWeekPage(pageIndex);
+                    },
+                  ),
+                ),
+
+          // Ручка-індикатор для потягування/розгортання
           GestureDetector(
             onTap: () => setState(() => _isCalendarExpanded = !_isCalendarExpanded),
             child: Container(
@@ -324,7 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Сторінка тижня
+  // Згорнутий тиждень із повним словом "Сьогодні"
   Widget _buildWeekPage(int pageIndex) {
     final pageOffset = pageIndex - 1000;
     final currentMonday = _today.subtract(Duration(days: _today.weekday - 1)).add(Duration(days: pageOffset * 7));
@@ -332,13 +319,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final weekDays = List.generate(7, (i) {
       final date = currentMonday.add(Duration(days: i));
       return {
-        'dayName': _weekDaysUa[i],
+        'dayName': _isSameDay(date, _today) ? "Сьогодні" : _weekDaysUa[i],
         'date': date,
       };
     });
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: weekDays.map((item) {
@@ -354,9 +341,21 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  item['dayName'].toString(),
-                  style: const TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold),
+                SizedBox(
+                  height: 14,
+                  child: Center(
+                    child: Text(
+                      item['dayName'].toString(),
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: isToday ? kPurpleAccent : kSubTextColor,
+                        fontSize: isToday ? 9.5 : 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: isToday ? -0.4 : 0,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Container(
@@ -395,10 +394,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Повний календар місяця
-  Widget _buildDynamicMonthGrid() {
-    final daysInMonth = DateUtils.getDaysInMonth(_selectedDate.year, _selectedDate.month);
-    final firstDayOfMonth = DateTime(_selectedDate.year, _selectedDate.month, 1);
+  // Розгорнута сітка для конкретного місяця в PageView
+  Widget _buildMonthGridForDate(DateTime monthDate) {
+    final daysInMonth = DateUtils.getDaysInMonth(monthDate.year, monthDate.month);
+    final firstDayOfMonth = DateTime(monthDate.year, monthDate.month, 1);
     final startingOffset = firstDayOfMonth.weekday - 1;
 
     return Padding(
@@ -430,7 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
               }
 
               final dayNum = index - startingOffset + 1;
-              final date = DateTime(_selectedDate.year, _selectedDate.month, dayNum);
+              final date = DateTime(monthDate.year, monthDate.month, dayNum);
               final isToday = _isSameDay(date, _today);
               final isSelected = _isSameDay(date, _selectedDate);
               final hasWorkout = _workoutDays.contains(dayNum) && date.month == _today.month;

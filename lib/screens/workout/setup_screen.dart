@@ -22,7 +22,7 @@ class _SetupScreenState extends State<SetupScreen> {
   
   // Тип підходу: false - Розминка (Warm up), true - Робочий підхід (Working set)
   bool _isWorkingSet = true; 
-  String _weight = '170'; // Початкове значення для демонстрації
+  String _weight = '170';
 
   final BleService _ble = BleService();
 
@@ -75,7 +75,7 @@ class _SetupScreenState extends State<SetupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Верхня панель зі збереженим статусом підключення BLE
+              // 1. Верхня панель зі статусом підключення BLE
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -128,7 +128,7 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 2. Типи підходу (Тільки 2 сети: Розминка / Робочий підхід)
+              // 2. Типи підходу
               Row(
                 children: [
                   Expanded(
@@ -163,7 +163,6 @@ class _SetupScreenState extends State<SetupScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        // Показник ваги з миготливим курсором
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.baseline,
                           textBaseline: TextBaseline.alphabetic,
@@ -176,7 +175,6 @@ class _SetupScreenState extends State<SetupScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            // Вертикальна риска курсору
                             Container(
                               margin: const EdgeInsets.only(left: 2, right: 8),
                               width: 2,
@@ -194,7 +192,6 @@ class _SetupScreenState extends State<SetupScreen> {
                           ],
                         ),
 
-                        // Фіолетова кнопка "Далі" (з'являється при вазі > 0)
                         if (_hasValidWeight)
                           InkWell(
                             onTap: () {
@@ -230,7 +227,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
               ),
 
-              // 4. Стилізована клавіатура
+              // 4. Очищена клавіатура без літер
               SizedBox(
                 height: 240,
                 child: _buildCustomKeypad(),
@@ -242,7 +239,6 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  // Віджет картки вибору типу підходу
   Widget _buildRadioSetTile({
     required String title,
     required String subtitle,
@@ -314,29 +310,12 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  // Віджет клавіатури
   Widget _buildCustomKeypad() {
     final keys = [
-      [
-        {'num': '1', 'sub': },
-        {'num': '2', 'sub': },
-        {'num': '3', 'sub': }
-      ],
-      [
-        {'num': '4', 'sub': },
-        {'num': '5', 'sub': },
-        {'num': '6', 'sub': }
-      ],
-      [
-        {'num': '7', 'sub': },
-        {'num': '8', 'sub': },
-        {'num': '9', 'sub': }
-      ],
-      [
-        {'num': ',', 'sub': },
-        {'num': '0', 'sub': },
-        {'num': '⌫', 'sub': }
-      ],
+      ['1', '2', '3'],
+      ['4', '5', '6'],
+      ['7', '8', '9'],
+      [',', '0', '⌫'],
     ];
 
     return Column(
@@ -344,10 +323,7 @@ class _SetupScreenState extends State<SetupScreen> {
         return Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: row.map((item) {
-              final key = item['num']!;
-              final sub = item['sub']!;
-
+            children: row.map((key) {
               return Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(3.0),
@@ -370,28 +346,15 @@ class _SetupScreenState extends State<SetupScreen> {
                           _onKeyPress(key);
                         }
                       },
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            key,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                            ),
+                      child: Center(
+                        child: Text(
+                          key,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
                           ),
-                          if (sub.isNotEmpty)
-                            Text(
-                              sub,
-                              style: const TextStyle(
-                                color: kSubTextColor,
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.1,
-                              ),
-                            ),
-                        ],
+                        ),
                       ),
                     ),
                   ),

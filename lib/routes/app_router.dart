@@ -9,7 +9,6 @@ import '../screens/workout/summary_screen.dart';
 import '../screens/device/device_screen.dart';
 import '../screens/profile/profile_screen.dart';
 
-// Акцентні фірмові кольори
 const kPurpleAccent = Color(0xFF6C22FF);
 const kDarkCardBg = Color(0xFF16161E);
 const kDarkBg = Color(0xFF0D0D12);
@@ -79,7 +78,7 @@ final appRouter = GoRouter(
         );
       },
       branches: [
-        // 1. Головна (крайня зліва)
+        // 1. Головна
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -88,21 +87,42 @@ final appRouter = GoRouter(
             ),
           ],
         ),
-        // 2. Тренування
+        // 2. Тренування з плавним переходом
         StatefulShellBranch(
           routes: [
             GoRoute(
               path: '/workout',
-              builder: (context, state) => const SetupScreen(),
+              pageBuilder: (context, state) => CustomTransitionPage(
+                key: state.pageKey,
+                child: const SetupScreen(),
+                transitionDuration: const Duration(milliseconds: 350),
+                reverseTransitionDuration: const Duration(milliseconds: 300),
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  return FadeTransition(
+                    opacity: CurveTween(curve: Curves.easeInOut).animate(animation),
+                    child: child,
+                  );
+                },
+              ),
               routes: [
                 GoRoute(
                   path: 'calibrate',
-                  builder: (context, state) {
+                  pageBuilder: (context, state) {
                     final m = state.extra as Map<String, dynamic>? ?? {};
-                    return CalibrationScreen(
-                      exercise: m['exercise'] ?? 'Станова тяга',
-                      setType: m['setType'] ?? 'Working set',
-                      weight: m['weight'] ?? '170',
+                    return CustomTransitionPage(
+                      key: state.pageKey,
+                      child: CalibrationScreen(
+                        exercise: m['exercise'] ?? 'Станова тяга',
+                        setType: m['setType'] ?? 'Working set',
+                        weight: m['weight'] ?? '170',
+                      ),
+                      transitionDuration: const Duration(milliseconds: 300),
+                      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                        return FadeTransition(
+                          opacity: CurveTween(curve: Curves.easeInOut).animate(animation),
+                          child: child,
+                        );
+                      },
                     );
                   },
                 ),

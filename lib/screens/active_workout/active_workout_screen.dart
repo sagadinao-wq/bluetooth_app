@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'widgets/exercise_card.dart';
-import 'widgets/bottom_workout_bar.dart';
+import '../../services/workout_service.dart';
+import 'widgets/hold_button.dart';
 
 const kPurpleAccent = Color(0xFF6C22FF);
 const kDarkCardBg = Color(0xFF16161E);
@@ -15,24 +15,26 @@ class ActiveWorkoutScreen extends StatefulWidget {
 }
 
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
-  // Список вправ активного тренування
-  final List<Map<String, dynamic>> _exercises = [
-    {
-      'title': 'Жим штанги лежачи',
-      'sets': [
-        ExerciseSetData(setNumber: 1, weight: '80', reps: '10', speed: '0.82 м/с', isCompleted: true),
-        ExerciseSetData(setNumber: 2, weight: '80', reps: '8', isCompleted: false),
-        ExerciseSetData(setNumber: 3, weight: '80', reps: '8', isCompleted: false),
-      ],
-    },
-    {
-      'title': 'Станова тяга',
-      'sets': [
-        ExerciseSetData(setNumber: 1, weight: '140', reps: '5', isCompleted: false),
-        ExerciseSetData(setNumber: 2, weight: '140', reps: '5', isCompleted: false),
-      ],
-    },
-  ];
+  final WorkoutService _workoutService = WorkoutService();
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_workoutService.isWorkoutActive) {
+      _workoutService.startWorkout();
+    }
+    _workoutService.addListener(_onServiceUpdate);
+  }
+
+  @override
+  void dispose() {
+    _workoutService.removeListener(_onServiceUpdate);
+    super.dispose();
+  }
+
+  void _onServiceUpdate() {
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,193 +43,358 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // 1. Верхній хідер з таймером та BLE
-            _buildWorkoutHeader(),
+            // Верхня панель зі стрілочкою згортання та кнопкою виклику меню
+            _buildTopHeader(),
 
-            // 2. Список картка вправ
+            // Статистика сесії
+            _buildWorkoutStatsHeader(),
+
+            // Основна зона: пустий стан або список вправ
             Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    ..._exercises.map((ex) {
-                      return ExerciseCard(
-                        exerciseName: ex['title'],
-                        sets: ex['sets'],
-                        onAddSet: () {
-                          setState(() {
-                            final sets = ex['sets'] as List<ExerciseSetData>;
-                            final lastSet = sets.isNotEmpty ? sets.last : null;
-                            sets.add(
-                              ExerciseSetData(
-                                setNumber: sets.length + 1,
-                                weight: lastSet?.weight ?? '50',
-                                reps: lastSet?.reps ?? '8',
-                              ),
-                            );
-                          });
-                        },
-                        onRemoveSet: () {
-                          setState(() {
-                            final sets = ex['sets'] as List<ExerciseSetData>;
-                            if (sets.length > 1) {
-                              sets.removeLast();
-                            }
-                          });
-                        },
-                      );
-                    }),
-
-                    const SizedBox(height: 8),
-
-                    // Кнопка додати нову вправу
-                    InkWell(
-                      onTap: _addNewExerciseModal,
-                      borderRadius: BorderRadius.circular(18),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        decoration: BoxDecoration(
-                          color: kDarkCardBg,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: kPurpleAccent.withOpacity(0.3), width: 1.5),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.add_rounded, color: kPurpleAccent, size: 22),
-                            SizedBox(width: 8),
-                            Text(
-                              "Додати вправу",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+              child: _workoutService.exercises.isEmpty
+                  ? _buildEmptyState()
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _workoutService.exercises.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index == _workoutService.exercises.length) {
+                          return _buildAddExerciseButton();
+                        }
+                        return _buildExerciseCard(index);
+                      },
                     ),
-                    const SizedBox(height: 80), // Відступ для нижнього док-бару
-                  ],
-                ),
-              ),
             ),
           ],
         ),
       ),
-
-      // 3. Плаваюча нижня шторка швидкого запуску
-      bottomSheet: BottomWorkoutBar(
-        activeExercise: _exercises.isNotEmpty ? _exercises.first['title'] : "Вправа",
-        activeSet: 2,
-        onStartPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Запис підходу розпочато через Bluetooth!"),
-              backgroundColor: kPurpleAccent,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        },
-      ),
     );
   }
 
-  // Верхній хідер тренування
-  Widget _buildWorkoutHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        color: kDarkCardBg,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
-      ),
+  Widget _buildTopHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Таймер тренування
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: kDarkBg,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.access_time_rounded, color: kSubTextColor, size: 16),
-                SizedBox(width: 6),
-                Text(
-                  "00:24:15",
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-
-          // Статус Bluetooth датчика
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: kPurpleAccent.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: kPurpleAccent.withOpacity(0.3)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.bluetooth_connected_rounded, color: kPurpleAccent, size: 16),
-                SizedBox(width: 6),
-                Text("ESP32 OK", style: TextStyle(color: kPurpleAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
-
-          // Завершити тренування
+          // Стрілочка вниз для згортання
           IconButton(
             onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 28),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 30),
+          ),
+          
+          // Меню з трьома крапочками
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 24),
+            color: kDarkCardBg,
+            onSelected: (value) {
+              if (value == 'save') {
+                _workoutService.finishWorkout();
+                Navigator.of(context).pop();
+              } else if (value == 'cancel') {
+                _workoutService.finishWorkout();
+                Navigator.of(context).pop();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'save',
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle_outline_rounded, color: Colors.greenAccent),
+                    SizedBox(width: 8),
+                    Text("Зберегти тренування", style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'cancel',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                    SizedBox(width: 8),
+                    Text("Скасувати тренування", style: TextStyle(color: Colors.redAccent)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  // Модальне вікно вибору вправи
-  void _addNewExerciseModal() {
+  Widget _buildWorkoutStatsHeader() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      decoration: BoxDecoration(
+        color: kDarkCardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _statItem("Тривалість", _workoutService.formattedTime, isTimer: true),
+          _statItem("Обсяг", "0 kg"),
+          _statItem("Підходи", "${_calculateTotalSets()}"),
+        ],
+      ),
+    );
+  }
+
+  int _calculateTotalSets() {
+    int total = 0;
+    for (var ex in _workoutService.exercises) {
+      total += ex.sets.length;
+    }
+    return total;
+  }
+
+  Widget _statItem(String label, String value, {bool isTimer = false}) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(color: kSubTextColor, fontSize: 12)),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            color: isTimer ? kPurpleAccent : Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.fitness_center_rounded, color: kSubTextColor, size: 48),
+          const SizedBox(height: 12),
+          const Text(
+            "Немає доданих вправ",
+            style: TextStyle(color: kSubTextColor, fontSize: 15),
+          ),
+          const SizedBox(height: 20),
+          _buildAddExerciseButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddExerciseButton() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12, bottom: 24),
+      child: ElevatedButton(
+        onPressed: _showExerciseSelectionModal,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        child: const Text("Додати вправу", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  // Картка вправи з можливістю згортання
+  Widget _buildExerciseCard(int index) {
+    final exercise = _workoutService.exercises[index];
+    final completedSets = exercise.sets.where((s) => s.isCompleted).length;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: kDarkCardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      child: Column(
+        children: [
+          // Заголовок вправи (Клік розгортає/згортає)
+          InkWell(
+            onTap: () => _workoutService.toggleExerciseExpanded(index),
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: kPurpleAccent.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.fitness_center_rounded, color: kPurpleAccent, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          exercise.name,
+                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          "$completedSets/${exercise.sets.length} виконано",
+                          style: const TextStyle(color: kSubTextColor, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    exercise.isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                    color: kSubTextColor,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Розгорнута частина з підходами
+          if (exercise.isExpanded) ...[
+            const Divider(color: Colors.white10, height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  if (exercise.sets.isNotEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Row(
+                        children: [
+                          SizedBox(width: 30, child: Text("SET", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold))),
+                          Expanded(child: Center(child: Text("KG", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
+                          Expanded(child: Center(child: Text("REPS", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
+                          SizedBox(width: 44),
+                        ],
+                      ),
+                    ),
+
+                  // Список підходів
+                  ...exercise.sets.map((set) => _buildSetRow(set)),
+
+                  const SizedBox(height: 12),
+
+                  // Кнопки + та - з заповненням при утриманні
+                  Row(
+                    children: [
+                      Expanded(
+                        child: HoldButton(
+                          icon: Icons.remove_rounded,
+                          fillColor: Colors.redAccent.withOpacity(0.8),
+                          onTrigger: () => _workoutService.removeSet(index),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: HoldButton(
+                          icon: Icons.add_rounded,
+                          fillColor: Colors.greenAccent.withOpacity(0.8),
+                          onTrigger: () => _workoutService.addSet(index),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSetRow(WorkoutSetData set) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: set.isCompleted ? kPurpleAccent.withOpacity(0.12) : kDarkBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 30,
+            child: Text(
+              "${set.setNumber}",
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: Text(set.weight, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: Text(set.reps, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                set.isCompleted = !set.isCompleted;
+              });
+            },
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: set.isCompleted ? const Color(0xFF10B981) : Colors.white12,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                set.isCompleted ? Icons.check_rounded : Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Модалка вибору з трьох базових вправ
+  void _showExerciseSelectionModal() {
+    final availableExercises = [
+      'Жим штанги лежачи',
+      'Присідання зі штангою',
+      'Станова тяга',
+    ];
+
     showModalBottomSheet(
       context: context,
       backgroundColor: kDarkCardBg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) {
-        final exercisesList = ['Присідання зі штангою', 'Армійський жим', 'Підтягування', 'Жим гантелей під кутом'];
         return Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                "Оберіть вправу",
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              const Text("Оберіть вправу", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
-              ...exercisesList.map(
-                (name) => ListTile(
-                  title: Text(name, style: const TextStyle(color: Colors.white)),
-                  trailing: const Icon(Icons.add_circle_outline_rounded, color: kPurpleAccent),
-                  onTap: () {
-                    setState(() {
-                      _exercises.add({
-                        'title': name,
-                        'sets': [ExerciseSetData(setNumber: 1, weight: '60', reps: '10')],
-                      });
-                    });
-                    Navigator.of(context).pop();
-                  },
-                ),
-              ),
+              ...availableExercises.map((name) => ListTile(
+                title: Text(name, style: const TextStyle(color: Colors.white)),
+                trailing: const Icon(Icons.add_circle_outline_rounded, color: kPurpleAccent),
+                onTap: () {
+                  _workoutService.addExercise(name);
+                  Navigator.of(context).pop();
+                },
+              )),
             ],
           ),
         );

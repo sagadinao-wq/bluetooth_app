@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/workout_service.dart';
 import 'widgets/hold_button.dart';
 import 'widgets/number_keyboard_sheet.dart';
@@ -117,9 +118,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          // Стрілочка вниз: повертає на Головну, згортаючи тренування в плашку
           IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 30),
+            onPressed: () => context.go('/home'),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 32),
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 24),
@@ -127,7 +129,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             onSelected: (value) {
               if (value == 'save' || value == 'cancel') {
                 _workoutService.finishWorkout();
-                Navigator.of(context).pop();
+                context.go('/home');
               }
             },
             itemBuilder: (context) => [
@@ -353,7 +355,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
 
-          // Клікабельне поле ваги з кастомною клавіатурою
+          // Поле Ваги
           Expanded(
             child: GestureDetector(
               onTap: () => _openKeyboardForSet(set, true),
@@ -361,7 +363,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 color: Colors.transparent,
                 child: Center(
                   child: Text(
-                    set.weight == '0' ? '—' : set.weight,
+                    set.weight,
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -369,7 +371,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
 
-          // Клікабельне поле повторів з кастомною клавіатурою
+          // Поле Повторів
           Expanded(
             child: GestureDetector(
               onTap: () => _openKeyboardForSet(set, false),
@@ -377,7 +379,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 color: Colors.transparent,
                 child: Center(
                   child: Text(
-                    set.reps == '0' ? '—' : set.reps,
+                    set.reps,
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -385,7 +387,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
 
-          // Кнопка запуску підходу (Перехід на екрани введення та калібрування)
+          // Запуск підходу
           GestureDetector(
             onTap: () => _startSetFlow(exerciseName, set),
             child: Container(

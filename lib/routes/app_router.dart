@@ -1,51 +1,94 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../screens/onboarding/onboarding_screen.dart';
+import '../screens/home/home_screen.dart';
 import '../screens/workout/setup_screen.dart';
 import '../screens/workout/calibration_screen.dart';
 import '../screens/workout/recording_screen.dart';
 import '../screens/workout/summary_screen.dart';
-import '../screens/history/history_screen.dart';
 import '../screens/device/device_screen.dart';
 import '../screens/profile/profile_screen.dart';
-import '../constants/app_colors.dart';
+
+// Акцентні фірмові кольори
+const kPurpleAccent = Color(0xFF6C22FF);
+const kDarkCardBg = Color(0xFF16161E);
+const kDarkBg = Color(0xFF0D0D12);
+const kSubTextColor = Color(0xFF8E8E93);
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final appRouter = GoRouter(
-  initialLocation: '/workout',
+  initialLocation: '/home',
   navigatorKey: _rootNavigatorKey,
   routes: [
-    GoRoute(
-      path: '/splash',
-      builder: (context, state) => const OnboardingScreen(),
-    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         return Scaffold(
+          backgroundColor: kDarkBg,
           body: navigationShell,
-          bottomNavigationBar: BottomNavigationBar(
-            backgroundColor: kCardColor,
-            selectedItemColor: kCyanColor,
-            unselectedItemColor: kSubColor,
-            currentIndex: navigationShell.currentIndex,
-            onTap: (index) {
-              navigationShell.goBranch(
-                index,
-                initialLocation: index == navigationShell.currentIndex,
-              );
-            },
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.fitness_center), label: 'Тренування'),
-              BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Історія'),
-              BottomNavigationBarItem(icon: Icon(Icons.bluetooth), label: 'Прилад'),
-              BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Профіль'),
-            ],
+          bottomNavigationBar: Container(
+            decoration: const BoxDecoration(
+              color: kDarkCardBg,
+              border: Border(
+                top: BorderSide(
+                  color: Colors.white10,
+                  width: 0.5,
+                ),
+              ),
+            ),
+            child: BottomNavigationBar(
+              backgroundColor: kDarkCardBg,
+              selectedItemColor: kPurpleAccent,
+              unselectedItemColor: kSubTextColor,
+              currentIndex: navigationShell.currentIndex,
+              type: BottomNavigationBarType.fixed,
+              elevation: 0,
+              selectedFontSize: 12,
+              unselectedFontSize: 12,
+              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
+              onTap: (index) {
+                navigationShell.goBranch(
+                  index,
+                  initialLocation: index == navigationShell.currentIndex,
+                );
+              },
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home_rounded),
+                  activeIcon: Icon(Icons.home_rounded, color: kPurpleAccent),
+                  label: 'Головна',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.fitness_center_rounded),
+                  activeIcon: Icon(Icons.fitness_center_rounded, color: kPurpleAccent),
+                  label: 'Тренування',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.bluetooth_rounded),
+                  activeIcon: Icon(Icons.bluetooth_rounded, color: kPurpleAccent),
+                  label: 'Прилад',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person_rounded),
+                  activeIcon: Icon(Icons.person_rounded, color: kPurpleAccent),
+                  label: 'Профіль',
+                ),
+              ],
+            ),
           ),
         );
       },
       branches: [
+        // 1. Головна (крайня зліва)
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/home',
+              builder: (context, state) => const HomeScreen(),
+            ),
+          ],
+        ),
+        // 2. Тренування
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -57,9 +100,9 @@ final appRouter = GoRouter(
                   builder: (context, state) {
                     final m = state.extra as Map<String, dynamic>? ?? {};
                     return CalibrationScreen(
-                      exercise: m['exercise'] ?? 'Жим',
+                      exercise: m['exercise'] ?? 'Станова тяга',
                       setType: m['setType'] ?? 'Working set',
-                      weight: m['weight'] ?? '60',
+                      weight: m['weight'] ?? '170',
                     );
                   },
                 ),
@@ -68,9 +111,9 @@ final appRouter = GoRouter(
                   builder: (context, state) {
                     final m = state.extra as Map<String, dynamic>? ?? {};
                     return RecordingScreen(
-                      exercise: m['exercise'] ?? 'Жим',
+                      exercise: m['exercise'] ?? 'Станова тяга',
                       setType: m['setType'] ?? 'Working set',
-                      weight: m['weight'] ?? '60',
+                      weight: m['weight'] ?? '170',
                     );
                   },
                 ),
@@ -79,9 +122,9 @@ final appRouter = GoRouter(
                   builder: (context, state) {
                     final m = state.extra as Map<String, dynamic>? ?? {};
                     return SummaryScreen(
-                      exercise: m['exercise'] ?? 'Жим',
+                      exercise: m['exercise'] ?? 'Станова тяга',
                       setType: m['setType'] ?? 'Working set',
-                      weight: m['weight'] ?? '60',
+                      weight: m['weight'] ?? '170',
                       repCount: m['repCount'] ?? 0,
                       bestV: m['bestV'] ?? 0.0,
                     );
@@ -91,14 +134,7 @@ final appRouter = GoRouter(
             ),
           ],
         ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/history',
-              builder: (context, state) => const HistoryScreen(),
-            ),
-          ],
-        ),
+        // 3. Прилад
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -107,6 +143,7 @@ final appRouter = GoRouter(
             ),
           ],
         ),
+        // 4. Профіль
         StatefulShellBranch(
           routes: [
             GoRoute(

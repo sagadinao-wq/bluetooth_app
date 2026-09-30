@@ -16,7 +16,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _isCalendarExpanded = false;
-  
+
   late DateTime _today;
   late DateTime _selectedDate;
   late PageController _weekPageController;
@@ -28,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<String> _weekDaysUa = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'];
 
-  // Дні поточного місяця, в які були тренування (повністю зафарбовуються фіолетовим)
+  // Дні поточного місяця з тренуваннями
   final Set<int> _workoutDays = {3, 8, 12, 15, 21, 25, 28};
 
   final BleService _ble = BleService();
@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _changeMonth(int offset) {
     setState(() {
-      _selectedDate = DateTime(_selectedDate.year, _selectedDate.month + offset, _selectedDate.day);
+      _selectedDate = DateTime(_selectedDate.year, _selectedDate.month + offset, 1);
     });
   }
 
@@ -76,7 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // 1. Верхня панель з розсувним динамічним календарем
+            // 1. Верхня панель з календарем
             _buildCalendarHeader(),
 
             // 2. Основна стрічка з історією
@@ -95,20 +95,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 8),
 
-                    // Світліша та виділена викликом дій картка швидкого старту
+                    // Світліша виділена картка швидкого старту
                     Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: () {
-                          context.go('/workout'); // Перехід у вкладку Налаштування підходу
-                        },
+                        onTap: () => context.go('/workout'),
                         borderRadius: BorderRadius.circular(20),
                         child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
+                            gradient: const LinearGradient(
                               colors: [
-                                const Color(0xFF231A3D), // Світліший фіолетовий відтінок
+                                Color(0xFF231A3D),
                                 kDarkCardBg,
                               ],
                               begin: Alignment.topLeft,
@@ -216,54 +214,52 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         children: [
-          // Шапка з можливістю свайпу місяця
+          // Шапка з назвою місяця по центру та стрілочками ВПРИТУЛ
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_rounded, color: kPurpleAccent, size: 18),
-                  onPressed: () => _changeDay(-1),
+                // Стрілочка вліво впритул
+                GestureDetector(
+                  onTap: () => _changeDay(-1),
+                  child: const Padding(
+                    padding: EdgeInsets.only(right: 12.0),
+                    child: Icon(Icons.arrow_back_ios_rounded, color: kPurpleAccent, size: 18),
+                  ),
                 ),
-                Expanded(
-                  child: GestureDetector(
-                    onHorizontalDragEnd: (details) {
-                      if (details.primaryVelocity != null) {
-                        if (details.primaryVelocity! < 0) {
-                          _changeMonth(1); // Свайп вліво -> наступний місяць
-                        } else if (details.primaryVelocity! > 0) {
-                          _changeMonth(-1); // Свайп вправо -> попередній місяць
-                        }
-                      }
-                    },
-                    onTap: () => setState(() => _isCalendarExpanded = !_isCalendarExpanded),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          monthName, // Назва місяця без року
-                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 6),
-                        Icon(
-                          _isCalendarExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                          color: kPurpleAccent,
-                          size: 20,
-                        ),
-                      ],
+
+                // Назва місяця по центру (клікабельна без залишків стрілочок розгортання)
+                GestureDetector(
+                  onTap: () => setState(() => _isCalendarExpanded = !_isCalendarExpanded),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+                    child: Text(
+                      monthName,
+                      key: ValueKey(monthName),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.arrow_forward_ios_rounded, color: kPurpleAccent, size: 18),
-                  onPressed: () => _changeDay(1),
+
+                // Стрілочка вправо впритул
+                GestureDetector(
+                  onTap: () => _changeDay(1),
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: 12.0),
+                    child: Icon(Icons.arrow_forward_ios_rounded, color: kPurpleAccent, size: 18),
+                  ),
                 ),
               ],
             ),
           ),
 
-          // Перемикач: Свайп тижнів АБО Повний сітковий календар
+          // Перемикач: Згорнута стрічка АБО Розгорнута сітка
           AnimatedCrossFade(
             firstChild: SizedBox(
               height: 70,
@@ -274,12 +270,37 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             ),
-            secondChild: _buildDynamicMonthGrid(),
+            secondChild: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragEnd: (details) {
+                if (details.primaryVelocity != null) {
+                  if (details.primaryVelocity! < 0) {
+                    _changeMonth(1); // Свайп вліво по всій сітці -> наступний місяць
+                  } else if (details.primaryVelocity! > 0) {
+                    _changeMonth(-1); // Свайп вправо по всій сітці -> попередній місяць
+                  }
+                }
+              },
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: SlideTransition(
+                    position: Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero).animate(anim),
+                    child: child,
+                  ),
+                ),
+                child: KeyedSubtree(
+                  key: ValueKey("${_selectedDate.year}-${_selectedDate.month}"),
+                  child: _buildDynamicMonthGrid(),
+                ),
+              ),
+            ),
             crossFadeState: _isCalendarExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 250),
+            duration: const Duration(milliseconds: 300),
           ),
 
-          // Індикатор-ручка для потягування
+          // Ручка-індикатор для потягування
           GestureDetector(
             onTap: () => setState(() => _isCalendarExpanded = !_isCalendarExpanded),
             child: Container(
@@ -303,7 +324,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Сторінка тижня для свайпу
+  // Сторінка тижня
   Widget _buildWeekPage(int pageIndex) {
     final pageOffset = pageIndex - 1000;
     final currentMonday = _today.subtract(Duration(days: _today.weekday - 1)).add(Duration(days: pageOffset * 7));
@@ -326,7 +347,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final isSelected = _isSameDay(date, _selectedDate);
           final hasWorkout = _workoutDays.contains(date.day) && date.month == _today.month;
 
-          final isHighlighted = isToday || isSelected || hasWorkout;
+          final isPurple = isToday || hasWorkout;
 
           return GestureDetector(
             onTap: () => setState(() => _selectedDate = date),
@@ -342,12 +363,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: isHighlighted ? kPurpleAccent : kDarkBg,
+                    color: isPurple ? kPurpleAccent : kDarkBg,
                     shape: BoxShape.circle,
-                    border: isSelected && !isToday
-                        ? Border.all(color: Colors.white, width: 2)
-                        : null,
-                    boxShadow: isHighlighted
+                    // Підсвітка білим обводком при натисканні
+                    border: isSelected ? Border.all(color: Colors.white, width: 2) : null,
+                    boxShadow: isPurple
                         ? [
                             BoxShadow(
                               color: kPurpleAccent.withOpacity(0.4),
@@ -362,7 +382,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       "${date.day}",
                       style: TextStyle(
                         color: Colors.white,
-                        fontWeight: isHighlighted ? FontWeight.bold : FontWeight.w500,
+                        fontWeight: isPurple || isSelected ? FontWeight.bold : FontWeight.w500,
                         fontSize: 15,
                       ),
                     ),
@@ -416,24 +436,23 @@ class _HomeScreenState extends State<HomeScreen> {
               final isSelected = _isSameDay(date, _selectedDate);
               final hasWorkout = _workoutDays.contains(dayNum) && date.month == _today.month;
 
-              final isHighlighted = isToday || isSelected || hasWorkout;
+              final isPurple = isToday || hasWorkout;
 
               return GestureDetector(
                 onTap: () => setState(() => _selectedDate = date),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: isHighlighted ? kPurpleAccent : kDarkBg,
+                    color: isPurple ? kPurpleAccent : kDarkBg,
                     shape: BoxShape.circle,
-                    border: isSelected && !isToday
-                        ? Border.all(color: Colors.white, width: 2)
-                        : null,
+                    // Білий кружечок/обводок підсвічування обраної дати
+                    border: isSelected ? Border.all(color: Colors.white, width: 2) : null,
                   ),
                   child: Center(
                     child: Text(
                       "$dayNum",
                       style: TextStyle(
                         color: Colors.white,
-                        fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isPurple || isSelected ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                   ),

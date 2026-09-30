@@ -285,7 +285,8 @@ class _SetPreparationScreenState extends State<SetPreparationScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
-                crossAxisAlignment: CrossBaseline.alphabetic,
+                // Виправлений варіант
+crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
                   Text(

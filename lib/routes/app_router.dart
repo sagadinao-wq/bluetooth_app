@@ -8,6 +8,7 @@ import '../screens/workout/recording_screen.dart';
 import '../screens/workout/summary_screen.dart';
 import '../screens/device/device_screen.dart';
 import '../screens/profile/profile_screen.dart';
+import '../services/workout_service.dart';
 
 const kPurpleAccent = Color(0xFF6C22FF);
 const kDarkCardBg = Color(0xFF16161E);
@@ -22,59 +23,136 @@ final appRouter = GoRouter(
   routes: [
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
-        return Scaffold(
-          backgroundColor: kDarkBg,
-          body: navigationShell,
-          bottomNavigationBar: Container(
-            decoration: const BoxDecoration(
-              color: kDarkCardBg,
-              border: Border(
-                top: BorderSide(
-                  color: Colors.white10,
-                  width: 0.5,
-                ),
+        final workoutService = WorkoutService();
+
+        return ListenableBuilder(
+          listenable: workoutService,
+          builder: (context, child) {
+            final isWorkoutActive = workoutService.isWorkoutActive;
+            final isCurrentWorkoutRoute = state.matchedLocation.startsWith('/workout');
+
+            return Scaffold(
+              backgroundColor: kDarkBg,
+              body: navigationShell,
+              bottomNavigationBar: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Плашка згорнутого активного тренування
+                  if (isWorkoutActive && !isCurrentWorkoutRoute)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: const BoxDecoration(
+                        color: kDarkCardBg,
+                        border: Border(
+                          top: BorderSide(
+                            color: Colors.white10,
+                            width: 0.5,
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: kPurpleAccent,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                "Тренування триває",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              TextButton.icon(
+                                onPressed: () => context.go('/workout'),
+                                icon: const Icon(Icons.play_arrow_rounded, color: kPurpleAccent, size: 18),
+                                label: const Text(
+                                  "Продовжити",
+                                  style: TextStyle(
+                                    color: kPurpleAccent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () => workoutService.finishWorkout(),
+                                icon: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 18),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Основний BottomNavigationBar
+                  Container(
+                    decoration: const BoxDecoration(
+                      color: kDarkCardBg,
+                      border: Border(
+                        top: BorderSide(
+                          color: Colors.white10,
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                    child: BottomNavigationBar(
+                      backgroundColor: kDarkCardBg,
+                      selectedItemColor: kPurpleAccent,
+                      unselectedItemColor: kSubTextColor,
+                      currentIndex: navigationShell.currentIndex,
+                      type: BottomNavigationBarType.fixed,
+                      elevation: 0,
+                      selectedFontSize: 12,
+                      unselectedFontSize: 12,
+                      selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
+                      onTap: (index) {
+                        navigationShell.goBranch(
+                          index,
+                          initialLocation: index == navigationShell.currentIndex,
+                        );
+                      },
+                      items: const [
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.home_rounded),
+                          activeIcon: Icon(Icons.home_rounded, color: kPurpleAccent),
+                          label: 'Головна',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.fitness_center_rounded),
+                          activeIcon: Icon(Icons.fitness_center_rounded, color: kPurpleAccent),
+                          label: 'Тренування',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.bluetooth_rounded),
+                          activeIcon: Icon(Icons.bluetooth_rounded, color: kPurpleAccent),
+                          label: 'Прилад',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.person_rounded),
+                          activeIcon: Icon(Icons.person_rounded, color: kPurpleAccent),
+                          label: 'Профіль',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ),
-            child: BottomNavigationBar(
-              backgroundColor: kDarkCardBg,
-              selectedItemColor: kPurpleAccent,
-              unselectedItemColor: kSubTextColor,
-              currentIndex: navigationShell.currentIndex,
-              type: BottomNavigationBarType.fixed,
-              elevation: 0,
-              selectedFontSize: 12,
-              unselectedFontSize: 12,
-              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
-              onTap: (index) {
-                navigationShell.goBranch(
-                  index,
-                  initialLocation: index == navigationShell.currentIndex,
-                );
-              },
-              items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.home_rounded),
-                  activeIcon: Icon(Icons.home_rounded, color: kPurpleAccent),
-                  label: 'Головна',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.fitness_center_rounded),
-                  activeIcon: Icon(Icons.fitness_center_rounded, color: kPurpleAccent),
-                  label: 'Тренування',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.bluetooth_rounded),
-                  activeIcon: Icon(Icons.bluetooth_rounded, color: kPurpleAccent),
-                  label: 'Прилад',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.person_rounded),
-                  activeIcon: Icon(Icons.person_rounded, color: kPurpleAccent),
-                  label: 'Профіль',
-                ),
-              ],
-            ),
-          ),
+            );
+          },
         );
       },
       branches: [

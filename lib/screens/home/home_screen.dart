@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/ble_service.dart';
 
 const kPurpleAccent = Color(0xFF6C22FF);
@@ -16,11 +17,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _isCalendarExpanded = false;
   
-  // Поточна дата пристрою
   late DateTime _today;
   late DateTime _selectedDate;
+  late PageController _weekPageController;
 
-  // Назви місяців та днів тижня українською
   final List<String> _monthsUa = [
     'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
     'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
@@ -28,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<String> _weekDaysUa = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'];
 
-  // Приклад днів із тренуваннями для поточного місяця (дні: 3, 8, 12, 15, 21, 25, 28)
+  // Дні поточного місяця, в які були тренування (повністю зафарбовуються фіолетовим)
   final Set<int> _workoutDays = {3, 8, 12, 15, 21, 25, 28};
 
   final BleService _ble = BleService();
@@ -38,11 +38,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _today = DateTime.now();
     _selectedDate = DateTime(_today.year, _today.month, _today.day);
+    _weekPageController = PageController(initialPage: 1000);
     _ble.addListener(_onBleUpdate);
   }
 
   @override
   void dispose() {
+    _weekPageController.dispose();
     _ble.removeListener(_onBleUpdate);
     super.dispose();
   }
@@ -55,6 +57,18 @@ class _HomeScreenState extends State<HomeScreen> {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
+  void _changeDay(int offset) {
+    setState(() {
+      _selectedDate = _selectedDate.add(Duration(days: offset));
+    });
+  }
+
+  void _changeMonth(int offset) {
+    setState(() {
+      _selectedDate = DateTime(_selectedDate.year, _selectedDate.month + offset, _selectedDate.day);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
             // 1. Верхня панель з розсувним динамічним календарем
             _buildCalendarHeader(),
 
-            // 2. Основна стрічка тренувань
+            // 2. Основна стрічка з історією
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -75,48 +89,78 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Text(
                       _isSameDay(_selectedDate, _today)
-                          ? "Сьогоднішній статус"
+                          ? "Обрана дата: Сьогодні"
                           : "Обрана дата: ${_selectedDate.day} ${_monthsUa[_selectedDate.month - 1].toLowerCase()}",
                       style: const TextStyle(color: kSubTextColor, fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
 
-                    // Картка статусу / швидкого старту
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: kDarkCardBg,
+                    // Світліша та виділена викликом дій картка швидкого старту
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          context.go('/workout'); // Перехід у вкладку Налаштування підходу
+                        },
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: kPurpleAccent.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: kPurpleAccent.withOpacity(0.15),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.bolt_rounded, color: kPurpleAccent, size: 28),
-                          ),
-                          const SizedBox(width: 14),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "Готові до тренування?",
-                                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  "Перейдіть у вкладку Тренування для запису підходу",
-                                  style: TextStyle(color: kSubTextColor, fontSize: 12),
-                                ),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF231A3D), // Світліший фіолетовий відтінок
+                                kDarkCardBg,
                               ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: kPurpleAccent.withOpacity(0.5), width: 1.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: kPurpleAccent.withOpacity(0.15),
+                                blurRadius: 12,
+                                spreadRadius: 1,
+                              ),
+                            ],
                           ),
-                        ],
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: kPurpleAccent,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: kPurpleAccent.withOpacity(0.4),
+                                      blurRadius: 8,
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 26),
+                              ),
+                              const SizedBox(width: 14),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "Готові до тренування?",
+                                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                    ),
+                                    SizedBox(height: 3),
+                                    Text(
+                                      "Оберіть вправу та почніть запис підходу",
+                                      style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 16),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
 
@@ -130,9 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     // Муляжі тренувань
                     _buildWorkoutDummyCard(
                       title: "Силове тренування — Жим & Тяга",
-                      date: _isSameDay(_selectedDate, _today)
-                          ? "Сьогодні, ${_today.day} ${_monthsUa[_today.month - 1]}"
-                          : "${_selectedDate.day} ${_monthsUa[_selectedDate.month - 1]}",
+                      date: "${_selectedDate.day} ${_monthsUa[_selectedDate.month - 1]}",
                       volume: "4,820 кг",
                       setsCount: "8 підходів",
                       bestSpeed: "0.82 м/с",
@@ -163,9 +205,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Блок календаря з можливістю розгортання
+  // Блок календаря
   Widget _buildCalendarHeader() {
-    final currentMonthName = _monthsUa[_today.month - 1];
+    final monthName = _monthsUa[_selectedDate.month - 1];
 
     return Container(
       decoration: const BoxDecoration(
@@ -174,53 +216,70 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         children: [
-          // Шапка з динамічним місяцем і роком
+          // Шапка з можливістю свайпу місяця
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      "$currentMonthName ${_today.year}",
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(
-                      _isCalendarExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                      color: kPurpleAccent,
-                    ),
-                  ],
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_rounded, color: kPurpleAccent, size: 18),
+                  onPressed: () => _changeDay(-1),
                 ),
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _isCalendarExpanded = !_isCalendarExpanded;
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: kDarkBg,
-                      borderRadius: BorderRadius.circular(12),
+                Expanded(
+                  child: GestureDetector(
+                    onHorizontalDragEnd: (details) {
+                      if (details.primaryVelocity != null) {
+                        if (details.primaryVelocity! < 0) {
+                          _changeMonth(1); // Свайп вліво -> наступний місяць
+                        } else if (details.primaryVelocity! > 0) {
+                          _changeMonth(-1); // Свайп вправо -> попередній місяць
+                        }
+                      }
+                    },
+                    onTap: () => setState(() => _isCalendarExpanded = !_isCalendarExpanded),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          monthName, // Назва місяця без року
+                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          _isCalendarExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                          color: kPurpleAccent,
+                          size: 20,
+                        ),
+                      ],
                     ),
-                    child: const Icon(Icons.calendar_today_rounded, color: Colors.white, size: 18),
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.arrow_forward_ios_rounded, color: kPurpleAccent, size: 18),
+                  onPressed: () => _changeDay(1),
                 ),
               ],
             ),
           ),
 
-          // Компактний тижневик АБО Повний календар місяця
+          // Перемикач: Свайп тижнів АБО Повний сітковий календар
           AnimatedCrossFade(
-            firstChild: _buildDynamicWeekStrip(),
+            firstChild: SizedBox(
+              height: 70,
+              child: PageView.builder(
+                controller: _weekPageController,
+                itemBuilder: (context, pageIndex) {
+                  return _buildWeekPage(pageIndex);
+                },
+              ),
+            ),
             secondChild: _buildDynamicMonthGrid(),
             crossFadeState: _isCalendarExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
             duration: const Duration(milliseconds: 250),
           ),
 
-          // Індикатор потягування шторки
+          // Індикатор-ручка для потягування
           GestureDetector(
             onTap: () => setState(() => _isCalendarExpanded = !_isCalendarExpanded),
             child: Container(
@@ -244,13 +303,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Динамічна стрічка поточного тижня (від Понеділка до Неділі)
-  Widget _buildDynamicWeekStrip() {
-    // Знаходимо понеділок поточного тижня
-    final monday = _today.subtract(Duration(days: _today.weekday - 1));
+  // Сторінка тижня для свайпу
+  Widget _buildWeekPage(int pageIndex) {
+    final pageOffset = pageIndex - 1000;
+    final currentMonday = _today.subtract(Duration(days: _today.weekday - 1)).add(Duration(days: pageOffset * 7));
 
     final weekDays = List.generate(7, (i) {
-      final date = monday.add(Duration(days: i));
+      final date = currentMonday.add(Duration(days: i));
       return {
         'dayName': _weekDaysUa[i],
         'date': date,
@@ -258,17 +317,21 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: weekDays.map((item) {
           final date = item['date'] as DateTime;
           final isToday = _isSameDay(date, _today);
           final isSelected = _isSameDay(date, _selectedDate);
+          final hasWorkout = _workoutDays.contains(date.day) && date.month == _today.month;
+
+          final isHighlighted = isToday || isSelected || hasWorkout;
 
           return GestureDetector(
             onTap: () => setState(() => _selectedDate = date),
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   item['dayName'].toString(),
@@ -279,12 +342,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: isToday ? kPurpleAccent : kDarkBg,
+                    color: isHighlighted ? kPurpleAccent : kDarkBg,
                     shape: BoxShape.circle,
                     border: isSelected && !isToday
-                        ? Border.all(color: kPurpleAccent, width: 2)
+                        ? Border.all(color: Colors.white, width: 2)
                         : null,
-                    boxShadow: isToday
+                    boxShadow: isHighlighted
                         ? [
                             BoxShadow(
                               color: kPurpleAccent.withOpacity(0.4),
@@ -299,7 +362,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       "${date.day}",
                       style: TextStyle(
                         color: Colors.white,
-                        fontWeight: isToday || isSelected ? FontWeight.bold : FontWeight.w500,
+                        fontWeight: isHighlighted ? FontWeight.bold : FontWeight.w500,
                         fontSize: 15,
                       ),
                     ),
@@ -313,12 +376,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Динамічна сітка повного поточного місяця
+  // Повний календар місяця
   Widget _buildDynamicMonthGrid() {
-    final daysInMonth = DateUtils.getDaysInMonth(_today.year, _today.month);
-    final firstDayOfMonth = DateTime(_today.year, _today.month, 1);
-    
-    // Зсув для початку місяця (понеділок = 0, неділя = 6)
+    final daysInMonth = DateUtils.getDaysInMonth(_selectedDate.year, _selectedDate.month);
+    final firstDayOfMonth = DateTime(_selectedDate.year, _selectedDate.month, 1);
     final startingOffset = firstDayOfMonth.weekday - 1;
 
     return Padding(
@@ -346,48 +407,35 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             itemBuilder: (context, index) {
               if (index < startingOffset) {
-                return const SizedBox.shrink(); // Порожні клітинки до початку місяця
+                return const SizedBox.shrink();
               }
 
               final dayNum = index - startingOffset + 1;
-              final date = DateTime(_today.year, _today.month, dayNum);
+              final date = DateTime(_selectedDate.year, _selectedDate.month, dayNum);
               final isToday = _isSameDay(date, _today);
               final isSelected = _isSameDay(date, _selectedDate);
-              final hasWorkout = _workoutDays.contains(dayNum);
+              final hasWorkout = _workoutDays.contains(dayNum) && date.month == _today.month;
+
+              final isHighlighted = isToday || isSelected || hasWorkout;
 
               return GestureDetector(
                 onTap: () => setState(() => _selectedDate = date),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: isToday ? kPurpleAccent : kDarkBg,
+                    color: isHighlighted ? kPurpleAccent : kDarkBg,
                     shape: BoxShape.circle,
                     border: isSelected && !isToday
-                        ? Border.all(color: kPurpleAccent, width: 2)
+                        ? Border.all(color: Colors.white, width: 2)
                         : null,
                   ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Text(
-                        "$dayNum",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: isToday || isSelected ? FontWeight.bold : FontWeight.normal,
-                        ),
+                  child: Center(
+                    child: Text(
+                      "$dayNum",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
                       ),
-                      if (hasWorkout && !isToday)
-                        Positioned(
-                          bottom: 4,
-                          child: Container(
-                            width: 4,
-                            height: 4,
-                            decoration: const BoxDecoration(
-                              color: kPurpleAccent,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
                 ),
               );
@@ -398,7 +446,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Віджет картки тренування
   Widget _buildWorkoutDummyCard({
     required String title,
     required String date,

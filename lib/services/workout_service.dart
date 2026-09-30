@@ -60,6 +60,10 @@ class WorkoutService extends ChangeNotifier {
   }
 
   void addExercise(String name) {
+    // Якщо тренування ще не було активним — обов'язково стартуємо його при додаванні першої вправи
+    if (!_isWorkoutActive) {
+      startWorkout();
+    }
     exercises.add(ActiveExercise(name: name));
     notifyListeners();
   }
@@ -77,8 +81,8 @@ class WorkoutService extends ChangeNotifier {
       ex.sets.add(
         WorkoutSetData(
           setNumber: ex.sets.length + 1,
-          weight: '—', // Прочерки за замовчуванням
-          reps: '—',   // Прочерки за замовчуванням
+          weight: '—',
+          reps: '—',
         ),
       );
       notifyListeners();

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../services/workout_service.dart';
 import 'widgets/hold_button.dart';
+import 'widgets/number_keyboard_sheet.dart';
+import 'set_preparation_screen.dart';
 
 const kPurpleAccent = Color(0xFF6C22FF);
 const kDarkCardBg = Color(0xFF16161E);
@@ -36,6 +38,50 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (mounted) setState(() {});
   }
 
+  void _openKeyboardForSet(WorkoutSetData set, bool isWeight) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return NumberKeyboardSheet(
+          title: isWeight ? "Введіть вагу" : "Введіть повтори",
+          initialValue: isWeight ? set.weight : set.reps,
+          unit: isWeight ? "kg" : "reps",
+          onConfirm: (val) {
+            setState(() {
+              if (isWeight) {
+                set.weight = val;
+              } else {
+                set.reps = val;
+              }
+            });
+          },
+        );
+      },
+    );
+  }
+
+  void _startSetFlow(String exerciseName, WorkoutSetData set) async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SetPreparationScreen(
+          exerciseName: exerciseName,
+          initialWeight: set.weight,
+        ),
+      ),
+    );
+
+    if (result != null && result is Map<String, dynamic>) {
+      setState(() {
+        set.weight = result['weight'] ?? set.weight;
+        set.isWarmup = result['isWarmup'] ?? false;
+        set.isCompleted = true;
+        set.speed = "0.78 м/с";
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -43,13 +89,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Верхня панель зі стрілочкою згортання та кнопкою виклику меню
             _buildTopHeader(),
-
-            // Статистика сесії
             _buildWorkoutStatsHeader(),
-
-            // Основна зона: пустий стан або список вправ
             Expanded(
               child: _workoutService.exercises.isEmpty
                   ? _buildEmptyState()
@@ -76,21 +117,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Стрілочка вниз для згортання
           IconButton(
             onPressed: () => Navigator.of(context).pop(),
             icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 30),
           ),
-          
-          // Меню з трьома крапочками
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 24),
             color: kDarkCardBg,
             onSelected: (value) {
-              if (value == 'save') {
-                _workoutService.finishWorkout();
-                Navigator.of(context).pop();
-              } else if (value == 'cancel') {
+              if (value == 'save' || value == 'cancel') {
                 _workoutService.finishWorkout();
                 Navigator.of(context).pop();
               }
@@ -175,10 +210,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         children: [
           const Icon(Icons.fitness_center_rounded, color: kSubTextColor, size: 48),
           const SizedBox(height: 12),
-          const Text(
-            "Немає доданих вправ",
-            style: TextStyle(color: kSubTextColor, fontSize: 15),
-          ),
+          const Text("Немає доданих вправ", style: TextStyle(color: kSubTextColor, fontSize: 15)),
           const SizedBox(height: 20),
           _buildAddExerciseButton(),
         ],
@@ -203,7 +235,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
-  // Картка вправи з можливістю згортання
   Widget _buildExerciseCard(int index) {
     final exercise = _workoutService.exercises[index];
     final completedSets = exercise.sets.where((s) => s.isCompleted).length;
@@ -217,7 +248,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       ),
       child: Column(
         children: [
-          // Заголовок вправи (Клік розгортає/згортає)
           InkWell(
             onTap: () => _workoutService.toggleExerciseExpanded(index),
             borderRadius: BorderRadius.circular(18),
@@ -239,15 +269,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          exercise.name,
-                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
+                        Text(exercise.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 2),
-                        Text(
-                          "$completedSets/${exercise.sets.length} виконано",
-                          style: const TextStyle(color: kSubTextColor, fontSize: 12),
-                        ),
+                        Text("$completedSets/${exercise.sets.length} виконано", style: const TextStyle(color: kSubTextColor, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -260,7 +284,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
 
-          // Розгорнута частина з підходами
           if (exercise.isExpanded) ...[
             const Divider(color: Colors.white10, height: 1),
             Padding(
@@ -280,12 +303,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                       ),
                     ),
 
-                  // Список підходів
-                  ...exercise.sets.map((set) => _buildSetRow(set)),
+                  ...exercise.sets.map((set) => _buildSetRow(exercise.name, set)),
 
                   const SizedBox(height: 12),
 
-                  // Кнопки + та - з заповненням при утриманні
                   Row(
                     children: [
                       Expanded(
@@ -314,7 +335,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
-  Widget _buildSetRow(WorkoutSetData set) {
+  Widget _buildSetRow(String exerciseName, WorkoutSetData set) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -328,25 +349,45 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             width: 30,
             child: Text(
               "${set.setNumber}",
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(color: set.isWarmup ? Colors.orangeAccent : Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
+
+          // Клікабельне поле ваги з кастомною клавіатурою
           Expanded(
-            child: Center(
-              child: Text(set.weight, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: GestureDetector(
+              onTap: () => _openKeyboardForSet(set, true),
+              child: Container(
+                color: Colors.transparent,
+                child: Center(
+                  child: Text(
+                    set.weight == '0' ? '—' : set.weight,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
             ),
           ),
+
+          // Клікабельне поле повторів з кастомною клавіатурою
           Expanded(
-            child: Center(
-              child: Text(set.reps, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: GestureDetector(
+              onTap: () => _openKeyboardForSet(set, false),
+              child: Container(
+                color: Colors.transparent,
+                child: Center(
+                  child: Text(
+                    set.reps == '0' ? '—' : set.reps,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
             ),
           ),
+
+          // Кнопка запуску підходу (Перехід на екрани введення та калібрування)
           GestureDetector(
-            onTap: () {
-              setState(() {
-                set.isCompleted = !set.isCompleted;
-              });
-            },
+            onTap: () => _startSetFlow(exerciseName, set),
             child: Container(
               width: 32,
               height: 32,
@@ -366,7 +407,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
-  // Модалка вибору з трьох базових вправ
   void _showExerciseSelectionModal() {
     final availableExercises = [
       'Жим штанги лежачи',

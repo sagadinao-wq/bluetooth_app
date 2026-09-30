@@ -23,6 +23,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void initState() {
     super.initState();
+    // Обов'язково запускаємо тренування при переході на екран
     if (!_workoutService.isWorkoutActive) {
       _workoutService.startWorkout();
     }
@@ -96,11 +97,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               child: _workoutService.exercises.isEmpty
                   ? _buildEmptyState()
                   : ListView.builder(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       itemCount: _workoutService.exercises.length + 1,
                       itemBuilder: (context, index) {
                         if (index == _workoutService.exercises.length) {
-                          return _buildAddExerciseButton();
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
+                            child: _buildAddExerciseButton(),
+                          );
                         }
                         return _buildExerciseCard(index);
                       },
@@ -118,7 +122,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Стрілочка вниз: повертає на Головну, згортаючи тренування в плашку
           IconButton(
             onPressed: () => context.go('/home'),
             icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 32),
@@ -205,34 +208,49 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
+  // Порожній стан із виразнішою гантеллю та відступами кнопки
   Widget _buildEmptyState() {
-    return Center(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.fitness_center_rounded, color: kSubTextColor, size: 48),
-          const SizedBox(height: 12),
-          const Text("Немає доданих вправ", style: TextStyle(color: kSubTextColor, fontSize: 15)),
-          const SizedBox(height: 20),
+          const Spacer(),
+          // Більша гантелька
+          Icon(
+            Icons.fitness_center_rounded,
+            color: kSubTextColor.withOpacity(0.6),
+            size: 80,
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "Немає доданих вправ",
+            style: TextStyle(color: kSubTextColor, fontSize: 16, fontWeight: FontWeight.w500),
+          ),
+          const Spacer(),
+          // Кнопка в повітрі
           _buildAddExerciseButton(),
+          const SizedBox(height: 12),
         ],
       ),
     );
   }
 
   Widget _buildAddExerciseButton() {
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      margin: const EdgeInsets.only(top: 12, bottom: 24),
       child: ElevatedButton(
         onPressed: _showExerciseSelectionModal,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
           foregroundColor: Colors.black,
           padding: const EdgeInsets.symmetric(vertical: 16),
+          elevation: 0,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
-        child: const Text("Додати вправу", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        child: const Text(
+          "Додати вправу",
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }
@@ -387,7 +405,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
 
-          // Запуск підходу
+          // Кнопка запуску підходу
           GestureDetector(
             onTap: () => _startSetFlow(exerciseName, set),
             child: Container(

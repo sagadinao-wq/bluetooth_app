@@ -2,14 +2,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class DatabaseService {
-  // Ленивые геттеры защищают от вызова Firestore до полной инициализации Firebase
+  // Безопасное получение экземпляров
   FirebaseFirestore get _db => FirebaseFirestore.instance;
   FirebaseAuth get _auth => FirebaseAuth.instance;
 
-  // Получение UID текущего пользователя
-  String? get currentUserId => _auth.currentUser?.uid;
+  // Получение UID с защитой
+  String? get currentUserId {
+    try {
+      return _auth.currentUser?.uid;
+    } catch (_) {
+      return null;
+    }
+  }
 
-  // Сохранение тренировки в Firestore
+  // Сохранение тренировки
   Future<void> saveWorkout(Map<String, dynamic> workoutData) async {
     final uid = currentUserId;
     if (uid == null) return;
@@ -21,10 +27,10 @@ class DatabaseService {
         .add(workoutData);
   }
 
-  // Получение списка тренировок пользователя в реальном времени
+  // Получение списка тренировок
   Stream<List<Map<String, dynamic>>> getUserWorkouts() {
     final uid = currentUserId;
-    if (uid == null) return const Stream.empty();
+    if (uid == null) return Stream.value([]);
 
     return _db
         .collection('users')

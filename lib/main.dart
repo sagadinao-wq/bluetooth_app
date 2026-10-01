@@ -5,7 +5,7 @@ import 'routes/app_router.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. Налаштовуємо перехоплення помилок UI
+  // Перехоплення помилок UI
   ErrorWidget.builder = (FlutterErrorDetails details) {
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D12),
@@ -23,21 +23,14 @@ void main() async {
     );
   };
 
-  // 2. Спочатку ЗАПУСКАЄМО додаток, щоб екран не зависав на заставці
-  runApp(const MyApp());
-
-  // 3. А ініціалізацію Firebase робимо у фоні
+  // Безпечна ініціалізація Firebase
   try {
-    await Firebase.initializeApp().timeout(
-      const Duration(seconds: 4),
-      onTimeout: () {
-        debugPrint("Таймаут ініціалізації Firebase");
-        return Firebase.app();
-      },
-    );
+    await Firebase.initializeApp();
   } catch (e) {
     debugPrint("Помилка ініціалізації Firebase: $e");
   }
+
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {

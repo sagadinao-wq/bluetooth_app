@@ -10,7 +10,12 @@ import '../screens/workout/recording_screen.dart';
 import '../screens/workout/summary_screen.dart';
 import '../screens/device/device_screen.dart';
 import '../screens/profile/profile_screen.dart';
+
+// Імпорти нових екранів авторизації
+import '../screens/auth/welcome_screen.dart';
 import '../screens/auth/login_screen.dart';
+import '../screens/auth/register_screen.dart';
+
 import '../services/workout_service.dart';
 import '../screens/active_workout/widgets/hold_button.dart';
 
@@ -40,34 +45,44 @@ class GoRouterRefreshStream extends ChangeNotifier {
 }
 
 final appRouter = GoRouter(
-  initialLocation: '/home',
+  initialLocation: '/welcome',
   navigatorKey: _rootNavigatorKey,
-  // Автоматичне оновлення роутингу при зміні стану авторизації
+  // Автоматичне оновлення роутингу при зміні стану авторизації Firebase
   refreshListenable: GoRouterRefreshStream(FirebaseAuth.instance.authStateChanges()),
   redirect: (context, state) {
     final user = FirebaseAuth.instance.currentUser;
-    final isLoggingIn = state.matchedLocation == '/login';
+    final isAuthRoute = state.matchedLocation == '/welcome' ||
+                        state.matchedLocation == '/login' ||
+                        state.matchedLocation == '/register';
 
-    // Якщо користувач НЕ авторизований і ще не на екрані входу — спрямовуємо на /login
-    if (user == null && !isLoggingIn) {
-      return '/login';
+    // Якщо користувач НЕ авторизований і намагається відкрити будь-який внутрішній екран — на /welcome
+    if (user == null && !isAuthRoute) {
+      return '/welcome';
     }
 
-    // Якщо користувач АВТОРИЗОВАНИЙ і намагається відкрити /login — спрямовуємо на /home
-    if (user != null && isLoggingIn) {
+    // Якщо користувач АВТОРИЗОВАНИЙ і знаходиться на екранах входу/реєстрації — перенаправляємо на /home
+    if (user != null && isAuthRoute) {
       return '/home';
     }
 
     return null;
   },
   routes: [
-    // 1. Екран авторизації (поза нижнім меню)
+    // 1. Екрани авторизації (поза нижнім меню)
+    GoRoute(
+      path: '/welcome',
+      builder: (context, state) => const WelcomeScreen(),
+    ),
     GoRoute(
       path: '/login',
       builder: (context, state) => const LoginScreen(),
     ),
+    GoRoute(
+      path: '/register',
+      builder: (context, state) => const RegisterScreen(),
+    ),
 
-    // 2. Основна навігаційна оболонка додатку
+    // 2. Основна навігаційна оболонка додатку з нижнім меню
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         final workoutService = WorkoutService();
@@ -82,7 +97,7 @@ final appRouter = GoRouter(
               backgroundColor: kDarkBg,
               body: navigationShell,
               bottomNavigationBar: Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisSize: MiniSize.min,
                 children: [
                   if (isWorkoutActive && !isCurrentWorkoutRoute)
                     Container(

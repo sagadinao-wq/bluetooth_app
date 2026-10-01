@@ -172,7 +172,7 @@ class ProfileDrawerScreen extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
-                            side: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+                            side: BorderSide(color: Colors.redAccent.withOpacity(0.3)), // Замінено на BorderSide
                           ),
                           elevation: 0,
                         ),

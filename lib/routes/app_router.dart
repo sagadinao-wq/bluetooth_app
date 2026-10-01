@@ -27,26 +27,27 @@ final appRouter = GoRouter(
     final user = FirebaseAuth.instance.currentUser;
     final isLoggingIn = state.matchedLocation == '/login';
 
-    // Якщо користувач не увійшов в акаунт — перенаправляємо на LoginScreen
+    // Якщо користувач НЕ авторизований і ВСЕ ЩЕ НЕ на екрані авторизації — перенаправляємо на /login
     if (user == null && !isLoggingIn) {
       return '/login';
     }
 
-    // Якщо авторизований і знаходиться на екрані входу — ведемо на головну
+    // Якщо користувач АВТОРИЗОВАНИЙ і намагається відкрити /login — перенаправляємо на /home
     if (user != null && isLoggingIn) {
       return '/home';
     }
 
+    // У всіх інших випадках не робимо перенаправлення
     return null;
   },
   routes: [
-    // Окремий маршрут для авторизації
+    // 1. Окремий маршрут екрана авторизації (поза нижнім меню)
     GoRoute(
       path: '/login',
       builder: (context, state) => const LoginScreen(),
     ),
 
-    // Основна навігаційна оболонка додатка
+    // 2. Основна навігаційна оболонка з точками входу
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         final workoutService = WorkoutService();
@@ -63,7 +64,6 @@ final appRouter = GoRouter(
               bottomNavigationBar: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Плашка активного тренування
                   if (isWorkoutActive && !isCurrentWorkoutRoute)
                     Container(
                       width: double.infinity,

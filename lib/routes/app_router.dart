@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../screens/home/home_screen.dart';
 import '../screens/active_workout/active_workout_screen.dart';
@@ -8,6 +9,7 @@ import '../screens/workout/recording_screen.dart';
 import '../screens/workout/summary_screen.dart';
 import '../screens/device/device_screen.dart';
 import '../screens/profile/profile_screen.dart';
+import '../screens/auth/login_screen.dart';
 import '../services/workout_service.dart';
 import '../screens/active_workout/widgets/hold_button.dart';
 
@@ -21,7 +23,30 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final appRouter = GoRouter(
   initialLocation: '/home',
   navigatorKey: _rootNavigatorKey,
+  redirect: (context, state) {
+    final user = FirebaseAuth.instance.currentUser;
+    final isLoggingIn = state.matchedLocation == '/login';
+
+    // Якщо користувач не увійшов в акаунт — перенаправляємо на LoginScreen
+    if (user == null && !isLoggingIn) {
+      return '/login';
+    }
+
+    // Якщо авторизований і знаходиться на екрані входу — ведемо на головну
+    if (user != null && isLoggingIn) {
+      return '/home';
+    }
+
+    return null;
+  },
   routes: [
+    // Окремий маршрут для авторизації
+    GoRoute(
+      path: '/login',
+      builder: (context, state) => const LoginScreen(),
+    ),
+
+    // Основна навігаційна оболонка додатка
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         final workoutService = WorkoutService();
@@ -38,7 +63,7 @@ final appRouter = GoRouter(
               bottomNavigationBar: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Повноширинна плашка з закругленням ТІЛЬКИ верхніх кутів
+                  // Плашка активного тренування
                   if (isWorkoutActive && !isCurrentWorkoutRoute)
                     Container(
                       width: double.infinity,
@@ -285,7 +310,7 @@ void _showCancelWorkoutDialog(BuildContext context, WorkoutService workoutServic
                 icon: Icons.stop_rounded,
                 fillColor: Colors.redAccent,
                 onTrigger: () {
-                  workoutService.finishWorkout();
+                  workoutService.finishWorkout(shouldSave: false);
                   Navigator.of(dialogContext).pop();
                 },
               ),

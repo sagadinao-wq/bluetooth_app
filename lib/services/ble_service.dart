@@ -1,32 +1,35 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+enum BleStatus { disconnected, scanning, connecting, connected, reconnecting }
+
 class BleService extends ChangeNotifier {
-  // Singleton патерн (один єдиний екземпляр на весь додаток)
+  // Singleton паттерн
   static final BleService _instance = BleService._internal();
   factory BleService() => _instance;
   BleService._internal();
 
-  // UUIDs згідно з прошивкою ESP32
+  // UUIDs под прошивку ESP32
   final String serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
   final String dataCharUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
   final String batteryCharUuid = "a23e4210-901e-42cc-8e99-8d6973e659aa";
 
-  // Стан підключення
+  // Состояние и статусы
+  BleStatus status = BleStatus.disconnected;
   BluetoothDevice? connectedDevice;
-  bool isConnected = false;
   bool isScanning = false;
   String connectedDeviceName = "Не підключено";
 
   // Метрики
   int rssi = -65;
   int pingMs = 15;
+  bool isPinging = false;
   int batteryPercent = 85;
   String batteryVoltage = "3.90V";
 
-  // VBT Метрики підходу
+  // VBT Метрики подхода
   bool isRecording = false;
   int repCount = 0;
   double lastMeanV = 0.0;
@@ -35,19 +38,53 @@ class BleService extends ChangeNotifier {
   double bestMeanV = 0.0;
   double velocityLoss = 0.0;
 
-  // Термінал / Логи
+  // Терминал / Логи
   final List<String> logs = [];
 
-  // BLE Характеристики
+  // BLE Характеристики и подписки
   BluetoothCharacteristic? _dataChar;
   BluetoothCharacteristic? _batteryChar;
   StreamSubscription<List<int>>? _dataSubscription;
   StreamSubscription<List<int>>? _batterySubscription;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   StreamSubscription<BluetoothConnectionState>? _connSub;
+  Timer? _autoReconnectTimer;
 
   List<ScanResult> scanResults = [];
   List<BluetoothDevice> systemDevices = [];
+
+  // Геттеры для отображения статуса в TopBar
+  bool get isConnected => status == BleStatus.connected;
+
+  String get statusText {
+    switch (status) {
+      case BleStatus.connected:
+        return "Підключено";
+      case BleStatus.connecting:
+        return "З'єднання...";
+      case BleStatus.reconnecting:
+        return "Повтор...";
+      case BleStatus.scanning:
+        return "Пошук...";
+      case BleStatus.disconnected:
+      default:
+        return "Відключено";
+    }
+  }
+
+  Color get statusColor {
+    switch (status) {
+      case BleStatus.connected:
+        return const Color(0xFF32D74B);
+      case BleStatus.connecting:
+      case BleStatus.reconnecting:
+      case BleStatus.scanning:
+        return const Color(0xFF00C2FF);
+      case BleStatus.disconnected:
+      default:
+        return const Color(0xFFFF3B4E);
+    }
+  }
 
   void addLog(String log, {bool isTx = false}) {
     final timeStr = DateTime.now().toString().substring(11, 19);
@@ -64,7 +101,8 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> startScan() async {
-    if (isScanning) return;
+    if (status == BleStatus.scanning) return;
+    status = BleStatus.scanning;
     isScanning = true;
     scanResults.clear();
     notifyListeners();
@@ -83,21 +121,26 @@ class BleService extends ChangeNotifier {
       addLog("Err scan: $e", isTx: true);
     } finally {
       isScanning = false;
+      if (status == BleStatus.scanning) {
+        status = BleStatus.disconnected;
+      }
       notifyListeners();
     }
   }
 
-  Future<bool> connectToDevice(BluetoothDevice device, String name) async {
-    // Скасовуємо старі з'єднання та підписки перед новим підключенням
+  Future<bool> connectToDevice(BluetoothDevice device, [String? name]) async {
     await disconnectDevice();
+
+    status = BleStatus.connecting;
+    connectedDeviceName = name ?? (device.platformName.isNotEmpty ? device.platformName : "Vector Pin");
+    notifyListeners();
 
     try {
       await device.connect(timeout: const Duration(seconds: 8));
 
-      // Слухаємо зміну стану підключення
       _connSub = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
-          _handleDisconnected();
+          _handleUnexpectedDisconnect();
         }
       });
 
@@ -140,14 +183,14 @@ class BleService extends ChangeNotifier {
       } catch (_) {}
 
       connectedDevice = device;
-      isConnected = true;
-      connectedDeviceName = name;
-      addLog("Connected to $name");
+      status = BleStatus.connected;
+      _autoReconnectTimer?.cancel();
+      addLog("Connected to $connectedDeviceName");
       notifyListeners();
       return true;
     } catch (e) {
       addLog("Err connect: $e", isTx: true);
-      await disconnectDevice();
+      _handleUnexpectedDisconnect();
       return false;
     }
   }
@@ -207,6 +250,9 @@ class BleService extends ChangeNotifier {
 
   Future<void> measurePing() async {
     if (!isConnected || connectedDevice == null) return;
+    isPinging = true;
+    notifyListeners();
+
     final stopwatch = Stopwatch()..start();
     try {
       final newRssi = await connectedDevice!.readRssi();
@@ -214,22 +260,44 @@ class BleService extends ChangeNotifier {
       rssi = newRssi;
       pingMs = stopwatch.elapsedMilliseconds;
       addLog("Ping: $pingMs ms, RSSI: $rssi dBm");
+    } catch (_) {
+      pingMs = -1;
+    } finally {
+      isPinging = false;
       notifyListeners();
-    } catch (_) {}
+    }
+  }
+
+  void _handleUnexpectedDisconnect() {
+    if (connectedDevice == null) {
+      _resetState();
+      return;
+    }
+    status = BleStatus.reconnecting;
+    notifyListeners();
+
+    _autoReconnectTimer?.cancel();
+    _autoReconnectTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      if (connectedDevice != null) {
+        try {
+          await connectedDevice!.connect(autoConnect: false);
+          status = BleStatus.connected;
+          timer.cancel();
+          addLog("Reconnected automatically");
+          notifyListeners();
+        } catch (_) {}
+      } else {
+        timer.cancel();
+      }
+    });
   }
 
   Future<void> disconnectDevice() async {
+    _autoReconnectTimer?.cancel();
     await _scanSubscription?.cancel();
-    _scanSubscription = null;
-
     await _connSub?.cancel();
-    _connSub = null;
-
     await _dataSubscription?.cancel();
-    _dataSubscription = null;
-
     await _batterySubscription?.cancel();
-    _batterySubscription = null;
 
     if (connectedDevice != null) {
       try {
@@ -237,16 +305,17 @@ class BleService extends ChangeNotifier {
       } catch (_) {}
     }
 
-    _handleDisconnected();
+    _resetState();
   }
 
-  void _handleDisconnected() {
+  void _resetState() {
     connectedDevice = null;
-    isConnected = false;
+    status = BleStatus.disconnected;
     connectedDeviceName = "Не підключено";
     isRecording = false;
     _dataChar = null;
     _batteryChar = null;
+    pingMs = 0;
     addLog("Disconnected");
     notifyListeners();
   }

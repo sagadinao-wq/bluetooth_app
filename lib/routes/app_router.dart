@@ -1,331 +1,78 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'routes/app_router.dart';
 
-import '../screens/home/home_screen.dart';
-import '../screens/active_workout/active_workout_screen.dart';
-import '../screens/workout/calibration_screen.dart';
-import '../screens/workout/recording_screen.dart';
-import '../screens/workout/summary_screen.dart';
-import '../screens/device/device_screen.dart';
-import '../screens/profile/profile_screen.dart';
-import '../screens/auth/login_screen.dart';
-import '../services/workout_service.dart';
-import '../screens/active_workout/widgets/hold_button.dart';
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-const kPurpleAccent = Color(0xFF6C22FF);
-const kDarkCardBg = Color(0xFF16161E);
-const kDarkBg = Color(0xFF0D0D12);
-const kSubTextColor = Color(0xFF8E8E93);
-
-final _rootNavigatorKey = GlobalKey<NavigatorState>();
-
-final appRouter = GoRouter(
-  initialLocation: '/home',
-  navigatorKey: _rootNavigatorKey,
-  redirect: (context, state) {
-    final user = FirebaseAuth.instance.currentUser;
-    final isLoggingIn = state.matchedLocation == '/login';
-
-    // Якщо користувач НЕ авторизований і ВСЕ ЩЕ НЕ на екрані авторизації — перенаправляємо на /login
-    if (user == null && !isLoggingIn) {
-      return '/login';
-    }
-
-    // Якщо користувач АВТОРИЗОВАНИЙ і намагається відкрити /login — перенаправляємо на /home
-    if (user != null && isLoggingIn) {
-      return '/home';
-    }
-
-    // У всіх інших випадках не робимо перенаправлення
-    return null;
-  },
-  routes: [
-    // 1. Окремий маршрут екрана авторизації (поза нижнім меню)
-    GoRoute(
-      path: '/login',
-      builder: (context, state) => const LoginScreen(),
-    ),
-
-    // 2. Основна навігаційна оболонка з точками входу
-    StatefulShellRoute.indexedStack(
-      builder: (context, state, navigationShell) {
-        final workoutService = WorkoutService();
-
-        return ListenableBuilder(
-          listenable: workoutService,
-          builder: (context, child) {
-            final isWorkoutActive = workoutService.isWorkoutActive;
-            final isCurrentWorkoutRoute = state.matchedLocation.startsWith('/workout');
-
-            return Scaffold(
-              backgroundColor: kDarkBg,
-              body: navigationShell,
-              bottomNavigationBar: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isWorkoutActive && !isCurrentWorkoutRoute)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: const BoxDecoration(
-                        color: kDarkCardBg,
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-                        border: Border(
-                          top: BorderSide(color: Colors.white10, width: 0.8),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: kPurpleAccent,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                "Тренування триває",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              TextButton.icon(
-                                onPressed: () => context.go('/workout'),
-                                icon: const Icon(Icons.play_arrow_rounded, color: kPurpleAccent, size: 18),
-                                label: const Text(
-                                  "Продовжити",
-                                  style: TextStyle(
-                                    color: kPurpleAccent,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              GestureDetector(
-                                onTap: () => _showCancelWorkoutDialog(context, workoutService),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.redAccent.withOpacity(0.15),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 16),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+  // Перехоплення та виведення помилок рендерингу безпосередньо на екран замість сірого заповнення
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D12),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 28),
+                    SizedBox(width: 10),
+                    Text(
+                      "Виявлено помилку",
+                      style: TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-
-                  // BottomNavigationBar
-                  Container(
-                    decoration: const BoxDecoration(
-                      color: kDarkCardBg,
-                      border: Border(
-                        top: BorderSide(
-                          color: Colors.white10,
-                          width: 0.5,
-                        ),
-                      ),
-                    ),
-                    child: BottomNavigationBar(
-                      backgroundColor: kDarkCardBg,
-                      selectedItemColor: kPurpleAccent,
-                      unselectedItemColor: kSubTextColor,
-                      currentIndex: navigationShell.currentIndex,
-                      type: BottomNavigationBarType.fixed,
-                      elevation: 0,
-                      selectedFontSize: 12,
-                      unselectedFontSize: 12,
-                      selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
-                      onTap: (index) {
-                        navigationShell.goBranch(
-                          index,
-                          initialLocation: index == navigationShell.currentIndex,
-                        );
-                      },
-                      items: const [
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.home_rounded),
-                          activeIcon: Icon(Icons.home_rounded, color: kPurpleAccent),
-                          label: 'Головна',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.fitness_center_rounded),
-                          activeIcon: Icon(Icons.fitness_center_rounded, color: kPurpleAccent),
-                          label: 'Тренування',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.bluetooth_rounded),
-                          activeIcon: Icon(Icons.bluetooth_rounded, color: kPurpleAccent),
-                          label: 'Прилад',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.person_rounded),
-                          activeIcon: Icon(Icons.person_rounded, color: kPurpleAccent),
-                          label: 'Профіль',
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-      branches: [
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/home',
-              builder: (context, state) => const HomeScreen(),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/workout',
-              pageBuilder: (context, state) => CustomTransitionPage(
-                key: state.pageKey,
-                child: const ActiveWorkoutScreen(),
-                transitionDuration: const Duration(milliseconds: 350),
-                reverseTransitionDuration: const Duration(milliseconds: 300),
-                transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                  return FadeTransition(
-                    opacity: CurveTween(curve: Curves.easeInOut).animate(animation),
-                    child: child,
-                  );
-                },
-              ),
-              routes: [
-                GoRoute(
-                  path: 'calibrate',
-                  pageBuilder: (context, state) {
-                    final m = state.extra as Map<String, dynamic>? ?? {};
-                    return CustomTransitionPage(
-                      key: state.pageKey,
-                      child: CalibrationScreen(
-                        exercise: m['exercise'] ?? 'Станова тяга',
-                        setType: m['setType'] ?? 'Working set',
-                        weight: m['weight'] ?? '170',
-                      ),
-                      transitionDuration: const Duration(milliseconds: 300),
-                      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                        return FadeTransition(
-                          opacity: CurveTween(curve: Curves.easeInOut).animate(animation),
-                          child: child,
-                        );
-                      },
-                    );
-                  },
+                  ],
                 ),
-                GoRoute(
-                  path: 'record',
-                  builder: (context, state) {
-                    final m = state.extra as Map<String, dynamic>? ?? {};
-                    return RecordingScreen(
-                      exercise: m['exercise'] ?? 'Станова тяга',
-                      setType: m['setType'] ?? 'Working set',
-                      weight: m['weight'] ?? '170',
-                    );
-                  },
+                const SizedBox(height: 16),
+                Text(
+                  "${details.exception}",
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                 ),
-                GoRoute(
-                  path: 'summary',
-                  builder: (context, state) {
-                    final m = state.extra as Map<String, dynamic>? ?? {};
-                    return SummaryScreen(
-                      exercise: m['exercise'] ?? 'Станова тяга',
-                      setType: m['setType'] ?? 'Working set',
-                      weight: m['weight'] ?? '170',
-                      repCount: m['repCount'] ?? 0,
-                      bestV: m['bestV'] ?? 0.0,
-                    );
-                  },
+                const SizedBox(height: 12),
+                Text(
+                  "${details.stack}",
+                  style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 11),
                 ),
               ],
             ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/device',
-              builder: (context, state) => const DeviceScreen(),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/profile',
-              builder: (context, state) => const ProfileScreen(),
-            ),
-          ],
-        ),
-      ],
-    ),
-  ],
-);
-
-void _showCancelWorkoutDialog(BuildContext context, WorkoutService workoutService) {
-  showDialog(
-    context: context,
-    builder: (dialogContext) {
-      return Dialog(
-        backgroundColor: kDarkCardBg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                "Ти впевнений, що хочеш перервати це тренування?",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 20),
-              HoldButton(
-                icon: Icons.stop_rounded,
-                fillColor: Colors.redAccent,
-                onTrigger: () {
-                  workoutService.finishWorkout(shouldSave: false);
-                  Navigator.of(dialogContext).pop();
-                },
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text(
-                  "Продовжити тренування",
-                  style: TextStyle(color: kSubTextColor, fontSize: 14, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
           ),
         ),
-      );
-    },
-  );
+      ),
+    );
+  };
+
+  // Безпечна ініціалізація Firebase з захистом від затримки
+  try {
+    await Firebase.initializeApp().timeout(
+      const Duration(seconds: 4),
+      onTimeout: () {
+        debugPrint("Таймаут ініціалізації Firebase");
+        return Firebase.app();
+      },
+    );
+  } catch (e) {
+    debugPrint("Помилка ініціалізації Firebase: $e");
+  }
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      title: 'Vector VBT',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF0D0D12),
+        primaryColor: const Color(0xFF6C22FF),
+      ),
+      routerConfig: appRouter,
+    );
+  }
 }

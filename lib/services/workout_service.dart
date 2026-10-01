@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'database_service.dart';
 
 class WorkoutSetData {
   int setNumber;
@@ -17,6 +18,17 @@ class WorkoutSetData {
     this.isCompleted = false,
     this.isWarmup = false,
   });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'setNumber': setNumber,
+      'weight': weight,
+      'reps': reps,
+      'speed': speed ?? '—',
+      'isCompleted': isCompleted,
+      'isWarmup': isWarmup,
+    };
+  }
 }
 
 class ActiveExercise {
@@ -29,12 +41,21 @@ class ActiveExercise {
     this.isExpanded = true,
     List<WorkoutSetData>? sets,
   }) : sets = sets ?? [];
+
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'sets': sets.map((s) => s.toMap()).toList(),
+    };
+  }
 }
 
 class WorkoutService extends ChangeNotifier {
   static final WorkoutService _instance = WorkoutService._internal();
   factory WorkoutService() => _instance;
   WorkoutService._internal();
+
+  final DatabaseService _dbService = DatabaseService();
 
   bool _isWorkoutActive = false;
   bool get isWorkoutActive => _isWorkoutActive;
@@ -81,7 +102,6 @@ class WorkoutService extends ChangeNotifier {
     }
   }
 
-  // Додавання підходу з підтягуванням даних попереднього підходу в цій же вправі
   void addSet(int exerciseIndex) {
     if (exerciseIndex >= 0 && exerciseIndex < exercises.length) {
       final ex = exercises[exerciseIndex];
@@ -89,7 +109,6 @@ class WorkoutService extends ChangeNotifier {
       String previousWeight = '—';
       String previousReps = '—';
 
-      // Якщо у цій вправі вже є підходи — копіюємо значення останнього
       if (ex.sets.isNotEmpty) {
         final lastSet = ex.sets.last;
         previousWeight = lastSet.weight;
@@ -117,7 +136,18 @@ class WorkoutService extends ChangeNotifier {
     }
   }
 
-  void finishWorkout() {
+  // Завершення тренування з можливістю збереження у Firebase Cloud Firestore
+  Future<void> finishWorkout({bool shouldSave = true}) async {
+    if (shouldSave && exercises.isNotEmpty) {
+      final workoutData = {
+        'durationSeconds': _elapsedSeconds,
+        'formattedTime': formattedTime,
+        'exercises': exercises.map((e) => e.toMap()).toList(),
+      };
+
+      await _dbService.saveWorkout(workoutData);
+    }
+
     _isWorkoutActive = false;
     _timer?.cancel();
     _elapsedSeconds = 0;

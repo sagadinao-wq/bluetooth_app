@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "242495250813",
+    "project_id": "vector-vbt",
+    "storage_bucket": "vector-vbt.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:242495250813:android:a980ffee0ed05e6cecac14",
+        "android_client_info": {
+          "package_name": "com.example.bluetooth_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "242495250813-lnabrfnffpll6pg9oc665t8d3d9bp1fk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCkK7ko5JJNHyASoD3oqc4F6T6CztHF2Kg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "242495250813-lnabrfnffpll6pg9oc665t8d3d9bp1fk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

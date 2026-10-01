@@ -5,17 +5,31 @@ import 'routes/app_router.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Захищена ініціалізація Firebase з таймаутом
+  // Виведення тексту помилки прямо на екран при сірому екрані
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D12),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: SingleChildScrollView(
+            child: Text(
+              "Помилка рендерингу:\n\n${details.exception}\n\nSTAC:\n${details.stack}",
+              style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+            ),
+          ),
+        ),
+      ),
+    );
+  };
+
   try {
     await Firebase.initializeApp().timeout(
       const Duration(seconds: 3),
-      onTimeout: () {
-        debugPrint("Таймаут підключення Firebase");
-        return Firebase.app();
-      },
+      onTimeout: () => Firebase.app(),
     );
   } catch (e) {
-    debugPrint("Помилка ініціалізації Firebase: $e");
+    debugPrint("Firebase init error: $e");
   }
 
   runApp(const MyApp());

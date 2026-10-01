@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../screens/home/home_screen.dart';
-import '../screens/active_workout/active_workout_screen.dart';
+import '../screens/home/home_screen.dart' hide kDarkBg, kDarkCardBg, kPurpleAccent, kSubTextColor;
+import '../screens/active_workout/active_workout_screen.dart' hide kDarkBg, kDarkCardBg, kPurpleAccent, kSubTextColor;
 import '../screens/workout/calibration_screen.dart';
 import '../screens/workout/recording_screen.dart';
 import '../screens/workout/summary_screen.dart';
@@ -93,7 +93,7 @@ final appRouter = GoRouter(
               backgroundColor: kDarkBg,
               body: navigationShell,
               bottomNavigationBar: Column(
-                mainAxisSize: MainAxisSize.min, // Фікс: було MiniSize.min
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   if (isWorkoutActive && !isCurrentWorkoutRoute)
                     Container(

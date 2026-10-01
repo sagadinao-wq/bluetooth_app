@@ -4,7 +4,6 @@ import '../../services/workout_service.dart';
 import '../../services/ble_service.dart';
 import 'widgets/hold_button.dart';
 import 'set_preparation_screen.dart';
-import 'analysis/set_analysis_screen.dart';
 
 const kPurpleAccent = Color(0xFF6C22FF);
 const kDarkCardBg = Color(0xFF16161E);
@@ -49,7 +48,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         builder: (context) => SetPreparationScreen(
           exerciseName: exerciseName,
           initialWeight: set.weight,
-          initialReps: set.reps, // Передаємо підтягнуті повтори
+          initialReps: set.reps,
         ),
       ),
     );
@@ -60,9 +59,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         set.reps = result['reps'] ?? 'AUTO';
         set.isWarmup = result['isWarmup'] ?? false;
         set.isCompleted = true;
-        set.speed = "0.78 м/с";
+        set.speed = null;
       });
     }
+  }
+
+  void _openExerciseAnalysis(String exerciseName) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ExerciseAnalysisFullScreen(exerciseName: exerciseName),
+      ),
+    );
   }
 
   @override
@@ -132,7 +139,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _bleService.isConnected ? "85% • 12ms" : "Датчик відключено",
+                    _bleService.isConnected ? "Підключено" : "Датчик відключено",
                     style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                 ],
@@ -142,10 +149,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 24),
             color: kDarkCardBg,
-            onSelected: (value) {
-              if (value == 'save' || value == 'cancel') {
-                _workoutService.finishWorkout();
-                context.go('/home');
+            onSelected: (value) async {
+              if (value == 'save') {
+                await _workoutService.finishWorkout(shouldSave: true);
+                if (context.mounted) context.go('/home');
+              } else if (value == 'cancel') {
+                await _workoutService.finishWorkout(shouldSave: false);
+                if (context.mounted) context.go('/home');
               }
             },
             itemBuilder: (context) => [
@@ -189,7 +199,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _statItem("Тривалість", _workoutService.formattedTime, isTimer: true),
-          _statItem("Обсяг", "0 kg"),
+          _statItem("Обсяг", "${_calculateTotalVolume()} kg"),
           _statItem("Підходи", "${_calculateTotalSets()}"),
         ],
       ),
@@ -200,6 +210,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     int total = 0;
     for (var ex in _workoutService.exercises) {
       total += ex.sets.length;
+    }
+    return total;
+  }
+
+  int _calculateTotalVolume() {
+    int total = 0;
+    for (var ex in _workoutService.exercises) {
+      for (var set in ex.sets) {
+        if (set.isCompleted) {
+          final w = int.tryParse(set.weight) ?? 0;
+          final r = int.tryParse(set.reps) ?? 0;
+          total += w * r;
+        }
+      }
     }
     return total;
   }
@@ -292,6 +316,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Widget _buildExerciseCard(int index) {
     final exercise = _workoutService.exercises[index];
     final completedSets = exercise.sets.where((s) => s.isCompleted).length;
+    final bool hasCompletedSets = completedSets > 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -320,12 +345,37 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
                       children: [
-                        Text(exercise.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 2),
-                        Text("$completedSets/${exercise.sets.length} виконано", style: const TextStyle(color: kSubTextColor, fontSize: 12)),
+                        Flexible(
+                          child: Text(
+                            exercise.name,
+                            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (hasCompletedSets) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => _openExerciseAnalysis(exercise.name),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: kPurpleAccent.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: kPurpleAccent.withOpacity(0.5)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text("📈", style: TextStyle(fontSize: 12)),
+                                  SizedBox(width: 4),
+                                  Text("Аналіз", style: TextStyle(color: kPurpleAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -352,7 +402,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                           SizedBox(width: 30, child: Text("SET", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold))),
                           Expanded(child: Center(child: Text("KG", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
                           Expanded(child: Center(child: Text("REPS", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
-                          SizedBox(width: 80),
+                          SizedBox(width: 50),
                         ],
                       ),
                     ),
@@ -448,30 +498,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ] else ...[
                 GestureDetector(
                   onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => SetAnalysisScreen(
-                          exerciseName: exerciseName,
-                          setNumber: set.setNumber,
-                          weight: set.weight,
-                          reps: set.reps,
-                        ),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    margin: const EdgeInsets.only(right: 6),
-                    decoration: BoxDecoration(
-                      color: kPurpleAccent.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: kPurpleAccent.withOpacity(0.4)),
-                    ),
-                    child: const Text("📊", style: TextStyle(fontSize: 13)),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () {
                     setState(() {
                       set.isCompleted = false;
                     });
@@ -530,6 +556,114 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+// Новий повноекранний режим аналізу з темним градієнтом та червоним круглим хрестиком
+class ExerciseAnalysisFullScreen extends StatelessWidget {
+  final String exerciseName;
+
+  const ExerciseAnalysisFullScreen({super.key, required this.exerciseName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF120C24),
+              kDarkBg,
+              Color(0xFF16161E),
+            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Шапка: Назва вправи та виділена червона кнопка закриття
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Аналіз вправи",
+                          style: TextStyle(color: kSubTextColor, fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          exerciseName,
+                          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.redAccent, width: 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.redAccent.withOpacity(0.3),
+                              blurRadius: 8,
+                            )
+                          ],
+                        ),
+                        child: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 22),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: Colors.white10, height: 1),
+
+              // Повноекранний скрол під майбутній обсяг аналітичних даних
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 40),
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: kDarkCardBg,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: kPurpleAccent.withOpacity(0.4), width: 2),
+                        ),
+                        child: const Text("📈", style: TextStyle(fontSize: 50)),
+                      ),
+                      const SizedBox(height: 24),
+                      const Text(
+                        "Детальна аналітика вправи",
+                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        "Тут відображатимуться графіки швидкості (V_mean / V_peak), втрата швидкості (Velocity Loss) та динаміка втоми за підходами.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: kSubTextColor, fontSize: 14, height: 1.4),
+                      ),
+                      const SizedBox(height: 300), // Запас для вертикального скролу
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

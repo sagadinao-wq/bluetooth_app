@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../screens/home/home_screen.dart';
 import '../screens/active_workout/active_workout_screen.dart';
@@ -8,6 +9,7 @@ import '../screens/workout/recording_screen.dart';
 import '../screens/workout/summary_screen.dart';
 import '../screens/device/device_screen.dart';
 import '../screens/profile/profile_screen.dart';
+import '../screens/auth/login_screen.dart';
 import '../services/workout_service.dart';
 import '../screens/active_workout/widgets/hold_button.dart';
 
@@ -21,7 +23,30 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final appRouter = GoRouter(
   initialLocation: '/home',
   navigatorKey: _rootNavigatorKey,
+  redirect: (context, state) {
+    final user = FirebaseAuth.instance.currentUser;
+    final isLoggingIn = state.matchedLocation == '/login';
+
+    // Якщо користувач НЕ авторизований і ще не на екрані входу — спрямовуємо на /login
+    if (user == null && !isLoggingIn) {
+      return '/login';
+    }
+
+    // Якщо користувач АВТОРИЗОВАНИЙ і намагається відкрити /login — спрямовуємо на /home
+    if (user != null && isLoggingIn) {
+      return '/home';
+    }
+
+    return null;
+  },
   routes: [
+    // 1. Екран авторизації (поза нижнім меню)
+    GoRoute(
+      path: '/login',
+      builder: (context, state) => const LoginScreen(),
+    ),
+
+    // 2. Основна навігаційна оболонка додатку
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         final workoutService = WorkoutService();

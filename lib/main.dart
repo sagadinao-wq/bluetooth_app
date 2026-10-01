@@ -1,19 +1,27 @@
 import 'package:flutter/material.dart';
-import 'constants/app_colors.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'routes/app_router.dart';
 
-void main() => runApp(const VectorVbtApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Ініціалізація Firebase
+  await Firebase.initializeApp();
 
-class VectorVbtApp extends StatelessWidget {
-  const VectorVbtApp({super.key});
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      debugShowCheckedModeBanner: false,
       title: 'Vector VBT',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: kBgColor,
+        scaffoldBackgroundColor: const Color(0xFF0D0D12),
+        primaryColor: const Color(0xFF6C22FF),
       ),
       routerConfig: appRouter,
     );

@@ -1,13 +1,13 @@
-import 'dart:async';
+import 'dart0:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../screens/home/home_screen.dart' hide kDarkBg, kDarkCardBg, kPurpleAccent, kSubTextColor;
 import '../screens/active_workout/active_workout_screen.dart' hide kDarkBg, kDarkCardBg, kPurpleAccent, kSubTextColor;
-import '../screens/workout/calibration_screen.dart';
-import '../screens/workout/recording_screen.dart';
-import '../screens/workout/summary_screen.dart';
+import '../screens/workout/calibration_screen.dart' hide kDarkBg, kDarkCardBg, kPurpleAccent, kSubTextColor;
+import '../screens/workout/recording_screen.dart' hide kDarkBg, kDarkCardBg, kPurpleAccent, kSubTextColor;
+import '../screens/workout/summary_screen.dart' hide kDarkBg, kDarkCardBg, kPurpleAccent, kSubTextColor;
 import '../screens/device/device_screen.dart';
 import '../screens/profile/profile_screen.dart';
 

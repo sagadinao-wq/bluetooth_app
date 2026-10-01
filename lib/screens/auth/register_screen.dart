@@ -47,7 +47,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final user = await _authService.signUpWithEmail(email, password);
+      final user = await _authService.signUpWithEmailAndPassword(email, password);
       if (user != null && mounted) {
         context.go('/home');
       }

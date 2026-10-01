@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -20,9 +21,29 @@ const kSubTextColor = Color(0xFF8E8E93);
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
+/// Конвертер Stream у Listenable для автоматичного реактивного редиректу GoRouter
+class GoRouterRefreshStream extends ChangeNotifier {
+  late final StreamSubscription<dynamic> _subscription;
+
+  GoRouterRefreshStream(Stream<dynamic> stream) {
+    notifyListeners();
+    _subscription = stream.asBroadcastStream().listen(
+          (_) => notifyListeners(),
+        );
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
 final appRouter = GoRouter(
   initialLocation: '/home',
   navigatorKey: _rootNavigatorKey,
+  // Автоматичне оновлення роутингу при зміні стану авторизації
+  refreshListenable: GoRouterRefreshStream(FirebaseAuth.instance.authStateChanges()),
   redirect: (context, state) {
     final user = FirebaseAuth.instance.currentUser;
     final isLoggingIn = state.matchedLocation == '/login';

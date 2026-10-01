@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'routes/app_router.dart';
 
-void main() {
-  // 1. Обов'язкова прив'язка виджетів
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. Перехоплення помилок малювання (щоб замість сірого екрана був текст)
+  // Обробка помилок UI
   ErrorWidget.builder = (FlutterErrorDetails details) {
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D12),
@@ -24,14 +23,22 @@ void main() {
     );
   };
 
-  // 3. МИТТЄВО запускаємо інтерфейс (ніяких await!)
-  runApp(const MyApp());
+  // Пряма ініціалізація Firebase з ключами з google-services.json
+  try {
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: "AIzaSyCkK7ko5JJNHyASoD3oqc4F6T6CztHF2Kg",
+        appId: "1:242495250813:android:a980ffee0ed05e6cecac14",
+        messagingSenderId: "242495250813",
+        projectId: "vector-vbt",
+        storageBucket: "vector-vbt.firebasestorage.app",
+      ),
+    );
+  } catch (e) {
+    debugPrint("Помилка ініціалізації Firebase: $e");
+  }
 
-  // 4. Ініціалізуємо Firebase у фоні без блокування UI
-  Firebase.initializeApp().catchError((e) {
-    debugPrint("Помилка фонового підключення Firebase: $e");
-    return Firebase.app();
-  });
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {

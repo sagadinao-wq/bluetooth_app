@@ -36,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final user = await _authService.signInWithEmail(email, password);
+      final user = await _authService.signInWithEmailAndPassword(email, password);
       if (user != null && mounted) {
         context.go('/home');
       }

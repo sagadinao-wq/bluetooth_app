@@ -1,8 +1,7 @@
-import '../../constants/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../services/auth_service.dart';
 import '../../constants/app_colors.dart';
+import '../../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -26,6 +25,28 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  void _loginWithEmail() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      _showError("Будь ласка, заповніть email та пароль");
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final user = await _authService.signInWithEmail(email, password);
+      if (user != null && mounted) {
+        context.go('/home');
+      }
+    } catch (e) {
+      _showError("Помилка входу: перевірте правильність даних");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   void _loginWithGoogle() async {
     setState(() => _isLoading = true);
     try {
@@ -34,16 +55,20 @@ class _LoginScreenState extends State<LoginScreen> {
         context.go('/home');
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: kDarkCardBg,
-            content: Text("Помилка входу через Google: $e", style: const TextStyle(color: Colors.white)),
-          ),
-        );
-      }
+      _showError("Помилка входу через Google (потрібна настройка SHA-1 у Firebase)");
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: kDarkCardBg,
+          content: Text(message, style: const TextStyle(color: Colors.white)),
+        ),
+      );
     }
   }
 
@@ -116,9 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       const Center(child: CircularProgressIndicator(color: kPurpleAccent))
                     else ...[
                       ElevatedButton(
-                        onPressed: () {
-                          // Тут підключимо стандартний Email/Password Auth
-                        },
+                        onPressed: _loginWithEmail,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),

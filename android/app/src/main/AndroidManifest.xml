@@ -1,4 +1,13 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.example.bluetooth_app">
+
+    <!-- Примусове визначення minSdkVersion 23 та перевизначення вимог Firebase -->
+    <uses-sdk 
+        android:minSdkVersion="23" 
+        android:targetSdkVersion="34" 
+        tools:overrideLibrary="com.google.firebase.auth, com.google.firebase.auth.internal, com.google.firebase" />
+
     <!-- Дозволи для Bluetooth BLE -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />

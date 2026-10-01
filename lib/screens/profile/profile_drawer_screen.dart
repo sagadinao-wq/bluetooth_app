@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
 
@@ -8,14 +7,54 @@ const kDarkCardBg = Color(0xFF16161E);
 const kDarkBg = Color(0xFF0D0D12);
 const kSubTextColor = Color(0xFF8E8E93);
 
-class ProfileDrawerScreen extends StatelessWidget {
+class ProfileDrawerScreen extends StatefulWidget {
   const ProfileDrawerScreen({super.key});
 
   @override
+  State<ProfileDrawerScreen> createState() => _ProfileDrawerScreenState();
+}
+
+class _ProfileDrawerScreenState extends State<ProfileDrawerScreen> {
+  final _authService = AuthService();
+  final _dbService = DatabaseService();
+  bool _isLoading = false;
+
+  void _loginWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = await _authService.signInWithGoogle();
+      if (user != null && mounted) {
+        setState(() {}); // Оновлюємо стан для відображення пошти
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Успішний вхід: ${user.email}")),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Помилка авторизації: $e")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _signOut() async {
+    setState(() => _isLoading = true);
+    try {
+      await _authService.signOut();
+      if (mounted) {
+        setState(() {}); // Оновлюємо стан на гостя
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final authService = AuthService();
-    final dbService = DatabaseService();
-    final user = authService.currentUser;
+    final user = _authService.currentUser;
 
     return Scaffold(
       backgroundColor: kDarkBg,
@@ -45,7 +84,7 @@ class ProfileDrawerScreen extends StatelessWidget {
             ),
             const Divider(color: Colors.white10),
 
-            // Контент профілю з реальними даними Firebase
+            // Контент профілю
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(20.0),
@@ -78,7 +117,7 @@ class ProfileDrawerScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  user?.email ?? "Акаунт користувача",
+                                  user?.email ?? "Гість (незареєстрований)",
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 15,
@@ -88,7 +127,7 @@ class ProfileDrawerScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  user != null ? "UID: ${user.uid.substring(0, 8)}..." : "Незареєстрований",
+                                  user != null ? "UID: ${user.uid.substring(0, 8)}..." : "Увійдіть для синхронізації",
                                   style: const TextStyle(color: kSubTextColor, fontSize: 11),
                                 ),
                               ],
@@ -107,7 +146,7 @@ class ProfileDrawerScreen extends StatelessWidget {
 
                     // Лічильник всього збережених тренувань з Firestore
                     StreamBuilder<List<Map<String, dynamic>>>(
-                      stream: dbService.getUserWorkouts(),
+                      stream: _dbService.getUserWorkouts(),
                       builder: (context, snapshot) {
                         final workouts = snapshot.data ?? [];
                         final count = workouts.length;
@@ -151,33 +190,48 @@ class ProfileDrawerScreen extends StatelessWidget {
 
                     const Spacer(),
 
-                    // Кнопка Виходу з акаунту
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          await authService.signOut();
-                          if (context.mounted) {
-                            Navigator.of(context).pop(); // Закриваємо дрейвер
-                            context.go('/login'); // Переходимо на екран авторизації
-                          }
-                        },
-                        icon: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 20),
-                        label: const Text(
-                          "Вийти з акаунту",
-                          style: TextStyle(color: Colors.redAccent, fontSize: 15, fontWeight: FontWeight.bold),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent.withOpacity(0.12),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(color: Colors.redAccent.withOpacity(0.3)), // Замінено на BorderSide
+                    // Динамічна кнопка: Вхід якщо гість, або Вихід якщо авторизований
+                    if (_isLoading)
+                      const Center(child: CircularProgressIndicator(color: kPurpleAccent))
+                    else if (user == null)
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _loginWithGoogle,
+                          icon: const Icon(Icons.g_mobiledata_rounded, size: 28, color: Colors.black),
+                          label: const Text(
+                            "Увійти через Google",
+                            style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold),
                           ),
-                          elevation: 0,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                          ),
+                        ),
+                      )
+                    else
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _signOut,
+                          icon: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 20),
+                          label: const Text(
+                            "Вийти з акаунту",
+                            style: TextStyle(color: Colors.redAccent, fontSize: 15, fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.redAccent.withOpacity(0.12),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(color: Colors.redAccent.withOpacity(0.3)),
+                            ),
+                            elevation: 0,
+                          ),
                         ),
                       ),
-                    ),
                     const SizedBox(height: 10),
                   ],
                 ),

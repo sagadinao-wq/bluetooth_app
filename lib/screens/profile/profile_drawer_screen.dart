@@ -22,11 +22,11 @@ class _ProfileDrawerScreenState extends State<ProfileDrawerScreen> {
   void _loginWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      final userCredential = await _authService.signInWithGoogle();
-      if (userCredential?.user != null && mounted) {
-        setState(() {}); // Оновлюємо стан для відображення пошти
+      final user = await _authService.signInWithGoogle();
+      if (user != null && mounted) {
+        setState(() {}); // Обновляем UI
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Успішний вхід: ${userCredential?.user?.email}")),
+          SnackBar(content: Text("Успішний вхід: ${user.email}")),
         );
       }
     } catch (e) {
@@ -45,7 +45,7 @@ class _ProfileDrawerScreenState extends State<ProfileDrawerScreen> {
     try {
       await _authService.signOut();
       if (mounted) {
-        setState(() {}); // Оновлюємо стан на гостя
+        setState(() {}); // Переключаем UI на гостя
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -61,7 +61,7 @@ class _ProfileDrawerScreenState extends State<ProfileDrawerScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Верхня шапка з хрестиком справа
+            // Шапка с кнопкой закрытия
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Row(
@@ -84,14 +84,14 @@ class _ProfileDrawerScreenState extends State<ProfileDrawerScreen> {
             ),
             const Divider(color: Colors.white10),
 
-            // Контент профілю
+            // Контент профиля
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Картка акаунту користувача
+                    // Карточка аккаунта
                     Container(
                       padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
@@ -144,7 +144,7 @@ class _ProfileDrawerScreenState extends State<ProfileDrawerScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Лічильник всього збережених тренувань з Firestore
+                    // Счетчик тренировок
                     StreamBuilder<List<Map<String, dynamic>>>(
                       stream: _dbService.getUserWorkouts(),
                       builder: (context, snapshot) {
@@ -190,7 +190,7 @@ class _ProfileDrawerScreenState extends State<ProfileDrawerScreen> {
 
                     const Spacer(),
 
-                    // Динамічна кнопка: Вхід якщо гість, або Вихід якщо авторизований
+                    // Кнопки Входа / Выхода
                     if (_isLoading)
                       const Center(child: CircularProgressIndicator(color: kPurpleAccent))
                     else if (user == null)

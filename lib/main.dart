@@ -1,41 +1,43 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'routes/app_router.dart';
 
-void main() {
-  runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-    // Перехоплення помилок рендерингу виджетів
-    ErrorWidget.builder = (FlutterErrorDetails details) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0D0D12),
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: SingleChildScrollView(
-              child: Text(
-                "Помилка рендерингу:\n\n${details.exception}\n\n${details.stack}",
-                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-              ),
+  // 1. Налаштовуємо перехоплення помилок UI
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D12),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: SingleChildScrollView(
+            child: Text(
+              "Помилка рендерингу:\n\n${details.exception}\n\n${details.stack}",
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
             ),
           ),
         ),
-      );
-    };
+      ),
+    );
+  };
 
-    // Ініціалізація Firebase
-    try {
-      await Firebase.initializeApp();
-    } catch (e) {
-      debugPrint("Помилка ініціалізації Firebase: $e");
-    }
+  // 2. Спочатку ЗАПУСКАЄМО додаток, щоб екран не зависав на заставці
+  runApp(const MyApp());
 
-    runApp(const MyApp());
-  }, (error, stack) {
-    debugPrint("Глобальна помилка: $error");
-  });
+  // 3. А ініціалізацію Firebase робимо у фоні
+  try {
+    await Firebase.initializeApp().timeout(
+      const Duration(seconds: 4),
+      onTimeout: () {
+        debugPrint("Таймаут ініціалізації Firebase");
+        return Firebase.app();
+      },
+    );
+  } catch (e) {
+    debugPrint("Помилка ініціалізації Firebase: $e");
+  }
 }
 
 class MyApp extends StatelessWidget {

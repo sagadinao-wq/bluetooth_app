@@ -1,7 +1,7 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 class BleService extends ChangeNotifier {
   // Singleton патерн (один єдиний екземпляр на весь додаток)
@@ -44,6 +44,7 @@ class BleService extends ChangeNotifier {
   StreamSubscription<List<int>>? _dataSubscription;
   StreamSubscription<List<int>>? _batterySubscription;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
+  StreamSubscription<BluetoothConnectionState>? _connSub;
 
   List<ScanResult> scanResults = [];
   List<BluetoothDevice> systemDevices = [];
@@ -52,7 +53,7 @@ class BleService extends ChangeNotifier {
     final timeStr = DateTime.now().toString().substring(11, 19);
     final prefix = isTx ? "➔ [TX]" : "⬅ [RX]";
     logs.insert(0, "[$timeStr] $prefix $log");
-    notifyListeners(); // Сповіщаємо UI про нові зміни
+    notifyListeners();
   }
 
   Future<void> fetchSystemDevices() async {
@@ -70,7 +71,7 @@ class BleService extends ChangeNotifier {
 
     await fetchSystemDevices();
 
-    _scanSubscription?.cancel();
+    await _scanSubscription?.cancel();
     _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
       scanResults = results;
       notifyListeners();
@@ -87,9 +88,19 @@ class BleService extends ChangeNotifier {
   }
 
   Future<bool> connectToDevice(BluetoothDevice device, String name) async {
+    // Скасовуємо старі з'єднання та підписки перед новим підключенням
+    await disconnectDevice();
+
     try {
       await device.connect(timeout: const Duration(seconds: 8));
-      
+
+      // Слухаємо зміну стану підключення
+      _connSub = device.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          _handleDisconnected();
+        }
+      });
+
       List<BluetoothService> services = await device.discoverServices();
       for (var service in services) {
         if (service.uuid.toString().toLowerCase() == serviceUuid.toLowerCase()) {
@@ -97,6 +108,8 @@ class BleService extends ChangeNotifier {
             if (char.uuid.toString().toLowerCase() == dataCharUuid.toLowerCase()) {
               _dataChar = char;
               await _dataChar!.setNotifyValue(true);
+              
+              await _dataSubscription?.cancel();
               _dataSubscription = _dataChar!.lastValueStream.listen((value) {
                 if (value.isNotEmpty) {
                   String msg = utf8.decode(value);
@@ -108,6 +121,8 @@ class BleService extends ChangeNotifier {
             if (char.uuid.toString().toLowerCase() == batteryCharUuid.toLowerCase()) {
               _batteryChar = char;
               await _batteryChar!.setNotifyValue(true);
+
+              await _batterySubscription?.cancel();
               _batterySubscription = _batteryChar!.lastValueStream.listen((value) {
                 if (value.isNotEmpty) {
                   String payload = utf8.decode(value);
@@ -132,6 +147,7 @@ class BleService extends ChangeNotifier {
       return true;
     } catch (e) {
       addLog("Err connect: $e", isTx: true);
+      await disconnectDevice();
       return false;
     }
   }
@@ -203,15 +219,34 @@ class BleService extends ChangeNotifier {
   }
 
   Future<void> disconnectDevice() async {
-    _dataSubscription?.cancel();
-    _batterySubscription?.cancel();
+    await _scanSubscription?.cancel();
+    _scanSubscription = null;
+
+    await _connSub?.cancel();
+    _connSub = null;
+
+    await _dataSubscription?.cancel();
+    _dataSubscription = null;
+
+    await _batterySubscription?.cancel();
+    _batterySubscription = null;
+
     if (connectedDevice != null) {
-      await connectedDevice!.disconnect();
+      try {
+        await connectedDevice!.disconnect();
+      } catch (_) {}
     }
+
+    _handleDisconnected();
+  }
+
+  void _handleDisconnected() {
     connectedDevice = null;
     isConnected = false;
     connectedDeviceName = "Не підключено";
     isRecording = false;
+    _dataChar = null;
+    _batteryChar = null;
     addLog("Disconnected");
     notifyListeners();
   }
@@ -219,5 +254,11 @@ class BleService extends ChangeNotifier {
   void clearLogs() {
     logs.clear();
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    disconnectDevice();
+    super.dispose();
   }
 }

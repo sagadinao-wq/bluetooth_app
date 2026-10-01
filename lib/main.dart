@@ -4,10 +4,21 @@ import 'routes/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Ініціалізація Firebase
-  await Firebase.initializeApp();
 
+  // Захищена ініціалізація з таймаутом
+  try {
+    await Firebase.initializeApp().timeout(
+      const Duration(seconds: 3),
+      onTimeout: () {
+        debugPrint("Таймаут підключення Firebase");
+        return Firebase.app();
+      },
+    );
+  } catch (e) {
+    debugPrint("Помилка ініціалізації Firebase: $e");
+  }
+
+  // Запуск додатку гарантовано розблокується
   runApp(const MyApp());
 }
 

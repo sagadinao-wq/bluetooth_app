@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/ble_service.dart';
+import '../../services/database_service.dart';
 import '../profile/profile_drawer_screen.dart';
 
 const kPurpleAccent = Color(0xFF6C22FF);
@@ -31,9 +32,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<String> _weekDaysUa = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'];
 
-  final Set<int> _workoutDays = {3, 8, 12, 15, 21, 25, 28};
-
   final BleService _ble = BleService();
+  final DatabaseService _dbService = DatabaseService();
 
   @override
   void initState() {
@@ -138,142 +138,201 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: kDarkBg,
       body: SafeArea(
-        child: Column(
-          children: [
-            // 1. Верхня панель з календарем
-            _buildCalendarHeader(),
+        child: StreamBuilder<List<Map<String, dynamic>>>(
+          stream: _dbService.getUserWorkouts(),
+          builder: (context, snapshot) {
+            final workouts = snapshot.data ?? [];
 
-            // 2. Основна стрічка з історією
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _isSameDay(_selectedDate, _today)
-                          ? "Обрана дата: Сьогодні"
-                          : "Обрана дата: ${_selectedDate.day} ${_monthsUa[_selectedDate.month - 1].toLowerCase()}",
-                      style: const TextStyle(color: kSubTextColor, fontSize: 13, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
+            // Формуємо сет днів, коли були тренування, з бази даних
+            final Set<int> workoutDays = {};
+            for (var w in workouts) {
+              if (w['createdAt'] != null) {
+                final date = (w['createdAt'] as dynamic).toDate();
+                if (date.month == _selectedDate.month && date.year == _selectedDate.year) {
+                  workoutDays.add(date.day);
+                }
+              }
+            }
 
-                    // Картка швидкого старту
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () async {
-                          await Future.delayed(const Duration(milliseconds: 60));
-                          if (context.mounted) {
-                            context.go('/workout');
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFF231A3D),
-                                kDarkCardBg,
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
+            return Column(
+              children: [
+                // 1. Верхня панель з інтерактивним календарем
+                _buildCalendarHeader(workoutDays),
+
+                // 2. Основна стрічка з карткою старту та реальною історією
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isSameDay(_selectedDate, _today)
+                              ? "Обрана дата: Сьогодні"
+                              : "Обрана дата: ${_selectedDate.day} ${_monthsUa[_selectedDate.month - 1].toLowerCase()}",
+                          style: const TextStyle(color: kSubTextColor, fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+
+                        // Картка швидкого старту
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () async {
+                              await Future.delayed(const Duration(milliseconds: 60));
+                              if (context.mounted) {
+                                context.go('/workout');
+                              }
+                            },
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: kPurpleAccent.withOpacity(0.5), width: 1.5),
-                            boxShadow: [
-                              BoxShadow(
-                                color: kPurpleAccent.withOpacity(0.15),
-                                blurRadius: 12,
-                                spreadRadius: 1,
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: kPurpleAccent,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: kPurpleAccent.withOpacity(0.4),
-                                      blurRadius: 8,
-                                    ),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFF231A3D),
+                                    kDarkCardBg,
                                   ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
                                 ),
-                                child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 26),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: kPurpleAccent.withOpacity(0.5), width: 1.5),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: kPurpleAccent.withOpacity(0.15),
+                                    blurRadius: 12,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 14),
-                              const Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "Готові до тренування?",
-                                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: kPurpleAccent,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: kPurpleAccent.withOpacity(0.4),
+                                          blurRadius: 8,
+                                        ),
+                                      ],
                                     ),
-                                    SizedBox(height: 3),
-                                    Text(
-                                      "Оберіть вправу та почніть запис підходу",
-                                      style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+                                    child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 26),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  const Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          "Готові до тренування?",
+                                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                        ),
+                                        SizedBox(height: 3),
+                                        Text(
+                                          "Оберіть вправу та почніть запис підходу",
+                                          style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 16),
+                                ],
                               ),
-                              const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 16),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    ),
 
-                    const SizedBox(height: 24),
-                    const Text(
-                      "Історія тренувань",
-                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 12),
+                        const SizedBox(height: 24),
+                        const Text(
+                          "Історія тренувань",
+                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 12),
 
-                    // Муляжі тренувань
-                    _buildWorkoutDummyCard(
-                      title: "Силове тренування — Жим & Тяга",
-                      date: "${_selectedDate.day} ${_monthsUa[_selectedDate.month - 1]}",
-                      volume: "4,820 кг",
-                      setsCount: "8 підходів",
-                      bestSpeed: "0.82 м/с",
+                        // Динамічний список тренувань із Firestore замість муляжів
+                        if (snapshot.connectionState == ConnectionState.waiting)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24.0),
+                              child: CircularProgressIndicator(color: kPurpleAccent),
+                            ),
+                          )
+                        else if (workouts.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: kDarkCardBg,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: Colors.white.withOpacity(0.05)),
+                            ),
+                            child: Column(
+                              children: [
+                                Icon(Icons.history_toggle_off_rounded, color: kSubTextColor.withOpacity(0.5), size: 48),
+                                const SizedBox(height: 10),
+                                const Text(
+                                  "Немає збережених тренувань",
+                                  style: TextStyle(color: kSubTextColor, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: workouts.length,
+                            itemBuilder: (context, index) {
+                              final item = workouts[index];
+                              final exercises = (item['exercises'] as List?) ?? [];
+                              final time = item['formattedTime'] ?? '00:00';
+
+                              // Обчислення об'єму та підходів
+                              int totalVolume = 0;
+                              int totalSets = 0;
+                              for (var ex in exercises) {
+                                final sets = (ex['sets'] as List?) ?? [];
+                                totalSets += sets.length;
+                                for (var s in sets) {
+                                  if (s['isCompleted'] == true) {
+                                    final w = int.tryParse(s['weight']?.toString() ?? '') ?? 0;
+                                    final r = int.tryParse(s['reps']?.toString() ?? '') ?? 0;
+                                    totalVolume += w * r;
+                                  }
+                                }
+                              }
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                child: _buildWorkoutRealCard(
+                                  title: exercises.isNotEmpty ? exercises.map((e) => e['name']).join(', ') : "Тренування",
+                                  date: "${_selectedDate.day} ${_monthsUa[_selectedDate.month - 1]}",
+                                  volume: "$totalVolume кг",
+                                  setsCount: "$totalSets підходів",
+                                  time: time,
+                                ),
+                              );
+                            },
+                          ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    _buildWorkoutDummyCard(
-                      title: "День ніг — Присідання",
-                      date: "28 Вересня",
-                      volume: "6,150 кг",
-                      setsCount: "10 підходів",
-                      bestSpeed: "0.68 м/с",
-                    ),
-                    const SizedBox(height: 12),
-                    _buildWorkoutDummyCard(
-                      title: "Верх тіла — Важка станова",
-                      date: "25 Вересня",
-                      volume: "5,400 кг",
-                      setsCount: "6 підходів",
-                      bestSpeed: "0.55 м/с",
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
   // Блок календаря з лівою та правою кнопками
-  Widget _buildCalendarHeader() {
+  Widget _buildCalendarHeader(Set<int> workoutDays) {
     final monthName = _monthsUa[_selectedDate.month - 1];
     final isNotToday = !_isSameDay(_selectedDate, _today);
 
@@ -284,13 +343,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         children: [
-          // Шапка: [Профіль Ліворуч] --- [Вересень] --- [Повернутися до сьогодні Праворуч]
+          // Шапка: [Профіль Ліворуч] --- [Назва місяця] --- [Сьогодні Праворуч]
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Жовта зона: Кнопка профілю
                 GestureDetector(
                   onTap: _openProfileDrawer,
                   child: Container(
@@ -317,7 +375,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-                // Зелена зона: З'являється лише коли обрано не сьогоднішній день
                 SizedBox(
                   width: 36,
                   height: 36,
@@ -351,7 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     itemBuilder: (context, pageIndex) {
                       final pageOffset = pageIndex - 1000;
                       final monthDate = DateTime(_today.year, _today.month + pageOffset, 1);
-                      return _buildMonthGridForDate(monthDate);
+                      return _buildMonthGridForDate(monthDate, workoutDays);
                     },
                   ),
                 )
@@ -361,7 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     controller: _weekPageController,
                     onPageChanged: _onWeekPageChanged,
                     itemBuilder: (context, pageIndex) {
-                      return _buildWeekPage(pageIndex);
+                      return _buildWeekPage(pageIndex, workoutDays);
                     },
                   ),
                 ),
@@ -391,9 +448,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Згорнутий тиждень з чітким вирівнюванням днів тижня
-  Widget _buildWeekPage(int pageIndex) {
+  Widget _buildWeekPage(int pageIndex, Set<int> workoutDays) {
     final pageOffset = pageIndex - 1000;
-    // Понеділок поточного тижня
     final currentMonday = _today.subtract(Duration(days: _today.weekday - 1)).add(Duration(days: pageOffset * 7));
 
     final weekDays = List.generate(7, (i) {
@@ -412,7 +468,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final date = item['date'] as DateTime;
           final isToday = _isSameDay(date, _today);
           final isSelected = _isSameDay(date, _selectedDate);
-          final hasWorkout = _workoutDays.contains(date.day) && date.month == _today.month;
+          final hasWorkout = workoutDays.contains(date.day) && date.month == _selectedDate.month;
 
           final isPurple = isToday || hasWorkout;
 
@@ -429,8 +485,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       maxLines: 1,
                       softWrap: false,
                       style: TextStyle(
-                        color: kSubTextColor, // Звичайний сірий колір без фіолетового
-                        fontSize: isToday ? 10 : 11, // Одинаковий сприйманий розмір
+                        color: kSubTextColor,
+                        fontSize: isToday ? 10 : 11,
                         fontWeight: FontWeight.bold,
                         letterSpacing: isToday ? -0.3 : 0,
                       ),
@@ -475,7 +531,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Розгорнута сітка для конкретного місяця
-  Widget _buildMonthGridForDate(DateTime monthDate) {
+  Widget _buildMonthGridForDate(DateTime monthDate, Set<int> workoutDays) {
     final daysInMonth = DateUtils.getDaysInMonth(monthDate.year, monthDate.month);
     final firstDayOfMonth = DateTime(monthDate.year, monthDate.month, 1);
     final startingOffset = firstDayOfMonth.weekday - 1;
@@ -512,7 +568,7 @@ class _HomeScreenState extends State<HomeScreen> {
               final date = DateTime(monthDate.year, monthDate.month, dayNum);
               final isToday = _isSameDay(date, _today);
               final isSelected = _isSameDay(date, _selectedDate);
-              final hasWorkout = _workoutDays.contains(dayNum) && date.month == _today.month;
+              final hasWorkout = workoutDays.contains(dayNum) && date.month == _selectedDate.month;
 
               final isPurple = isToday || hasWorkout;
 
@@ -542,12 +598,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildWorkoutDummyCard({
+  Widget _buildWorkoutRealCard({
     required String title,
     required String date,
     required String volume,
     required String setsCount,
-    required String bestSpeed,
+    required String time,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -574,7 +630,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _metricTile("Об'єм", volume),
               _metricTile("Підходи", setsCount),
-              _metricTile("Max V_mean", bestSpeed),
+              _metricTile("Тривалість", time),
             ],
           ),
         ],

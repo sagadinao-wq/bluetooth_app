@@ -22,11 +22,11 @@ class _ProfileDrawerScreenState extends State<ProfileDrawerScreen> {
   void _loginWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      final user = await _authService.signInWithGoogle();
-      if (user != null && mounted) {
+      final userCredential = await _authService.signInWithGoogle();
+      if (userCredential?.user != null && mounted) {
         setState(() {}); // Оновлюємо стан для відображення пошти
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Успішний вхід: ${user.email}")),
+          SnackBar(content: Text("Успішний вхід: ${userCredential?.user?.email}")),
         );
       }
     } catch (e) {

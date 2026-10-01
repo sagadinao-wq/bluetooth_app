@@ -19,7 +19,6 @@ if (flutterVersionName == null) {
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'dev.flutter.flutter-gradle-plugin'
-apply plugin: 'com.google.gms.google-services'
 
 android {
     namespace "com.example.bluetooth_app"

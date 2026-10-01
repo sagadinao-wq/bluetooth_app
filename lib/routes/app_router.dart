@@ -18,11 +18,7 @@ import '../screens/auth/register_screen.dart';
 
 import '../services/workout_service.dart';
 import '../screens/active_workout/widgets/hold_button.dart';
-
-const kPurpleAccent = Color(0xFF6C22FF);
-const kDarkCardBg = Color(0xFF16161E);
-const kDarkBg = Color(0xFF0D0D12);
-const kSubTextColor = Color(0xFF8E8E93);
+import '../constants/app_colors.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -97,7 +93,7 @@ final appRouter = GoRouter(
               backgroundColor: kDarkBg,
               body: navigationShell,
               bottomNavigationBar: Column(
-                mainAxisSize: MiniSize.min,
+                mainAxisSize: MainAxisSize.min, // Фікс: було MiniSize.min
                 children: [
                   if (isWorkoutActive && !isCurrentWorkoutRoute)
                     Container(

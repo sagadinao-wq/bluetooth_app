@@ -2,34 +2,35 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class DatabaseService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  // Ленивые геттеры защищают от вызова Firestore до полной инициализации Firebase
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
 
-  String? get _userId => _auth.currentUser?.uid;
+  // Получение UID текущего пользователя
+  String? get currentUserId => _auth.currentUser?.uid;
 
-  // Збереження виконаного тренування у Firestore
+  // Сохранение тренировки в Firestore
   Future<void> saveWorkout(Map<String, dynamic> workoutData) async {
-    if (_userId == null) return;
+    final uid = currentUserId;
+    if (uid == null) return;
 
     await _db
         .collection('users')
-        .doc(_userId)
+        .doc(uid)
         .collection('workouts')
-        .add({
-      ...workoutData,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+        .add(workoutData);
   }
 
-  // Отримання списку тренувань користувача
+  // Получение списка тренировок пользователя в реальном времени
   Stream<List<Map<String, dynamic>>> getUserWorkouts() {
-    if (_userId == null) return Stream.value([]);
+    final uid = currentUserId;
+    if (uid == null) return const Stream.empty();
 
     return _db
         .collection('users')
-        .doc(_userId)
+        .doc(uid)
         .collection('workouts')
-        .orderBy('createdAt', descending: true)
+        .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) {
               final data = doc.data();

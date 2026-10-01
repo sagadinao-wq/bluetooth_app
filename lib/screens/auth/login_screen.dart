@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/auth_service.dart';
-
-const kPurpleAccent = Color(0xFF6C22FF);
-const kDarkCardBg = Color(0xFF16161E);
-const kDarkBg = Color(0xFF0D0D12);
-const kSubTextColor = Color(0xFF8E8E93);
+import '../../constants/app_colors.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,7 +12,18 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _authService = AuthService();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+
   bool _isLoading = false;
+  bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   void _loginWithGoogle() async {
     setState(() => _isLoading = true);
@@ -30,28 +37,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: kDarkCardBg,
-            content: Text("Помилка входу: $e", style: const TextStyle(color: Colors.white)),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _loginAnonymously() async {
-    setState(() => _isLoading = true);
-    try {
-      final user = await _authService.signInAnonymously();
-      if (user != null && mounted) {
-        context.go('/home');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: kDarkCardBg,
-            content: Text("Не вдалося увійти як гість: $e", style: const TextStyle(color: Colors.white)),
+            content: Text("Помилка входу через Google: $e", style: const TextStyle(color: Colors.white)),
           ),
         );
       }
@@ -65,89 +51,175 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: kDarkBg,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 20.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(),
+        child: Column(
+          children: [
+            // Верхня панель із кнопкою Назад
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => context.pop(),
+                    icon: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
-              // Логотип та назва
-              Center(
-                child: Container(
-                  width: 90,
-                  height: 90,
-                  decoration: BoxDecoration(
-                    color: kPurpleAccent.withOpacity(0.15),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: kPurpleAccent, width: 2),
-                  ),
-                  child: const Icon(
-                    Icons.fitness_center_rounded,
-                    size: 48,
-                    color: kPurpleAccent,
-                  ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 20),
+                    const Text(
+                      "Welcome Back",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 36),
+
+                    // Поле вводу Email
+                    _buildTextField(
+                      controller: _emailController,
+                      hint: "Email",
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Поле вводу Паролю
+                    _buildTextField(
+                      controller: _passwordController,
+                      hint: "Password",
+                      isPassword: true,
+                      obscureText: _obscurePassword,
+                      onTogglePassword: () => setState(() => _obscurePassword = !_obscurePassword),
+                    ),
+                    const SizedBox(height: 28),
+
+                    // Кнопки входу
+                    if (_isLoading)
+                      const Center(child: CircularProgressIndicator(color: kPurpleAccent))
+                    else ...[
+                      ElevatedButton(
+                        onPressed: () {
+                          // Тут підключимо стандартний Email/Password Auth
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          "Log in",
+                          style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _buildDivider(),
+                      const SizedBox(height: 24),
+                      _buildGoogleButton(),
+                    ],
+
+                    const SizedBox(height: 28),
+                    Center(
+                      child: TextButton(
+                        onPressed: () {},
+                        child: const Text(
+                          "Forgot Password?",
+                          style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 24),
-              const Text(
-                "Vector VBT",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.1,
-                ),
-              ),
-
-              const Spacer(),
-
-              // Кнопки дій
-              if (_isLoading)
-                const Center(child: CircularProgressIndicator(color: kPurpleAccent))
-              else ...[
-                // Кнопка вход через Google
-                ElevatedButton.icon(
-                  onPressed: _loginWithGoogle,
-                  icon: const Icon(Icons.g_mobiledata_rounded, size: 32, color: Colors.black),
-                  label: const Text(
-                    "Увійти через Google",
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    elevation: 0,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Продовжити як гість
-                TextButton(
-                  onPressed: _loginAnonymously,
-                  child: const Text(
-                    "Продовжити як гість",
-                    style: TextStyle(
-                      color: kSubTextColor,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 10),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String hint,
+    TextInputType keyboardType = TextInputType.text,
+    bool isPassword = false,
+    bool obscureText = false,
+    VoidCallback? onTogglePassword,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: kDarkCardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        obscureText: isPassword ? obscureText : false,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          border: InputBorder.none,
+          suffixIcon: isPassword
+              ? IconButton(
+                  icon: Icon(
+                    obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    color: Colors.white38,
+                    size: 20,
+                  ),
+                  onPressed: onTogglePassword,
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return Row(
+      children: const [
+        Expanded(child: Divider(color: Colors.white12)),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text("or", style: TextStyle(color: Colors.white38, fontSize: 12)),
+        ),
+        Expanded(child: Divider(color: Colors.white12)),
+      ],
+    );
+  }
+
+  Widget _buildGoogleButton() {
+    return ElevatedButton.icon(
+      onPressed: _loginWithGoogle,
+      icon: const Icon(Icons.g_mobiledata_rounded, size: 30, color: Colors.black),
+      label: const Text(
+        "Log in With Google",
+        style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        elevation: 0,
       ),
     );
   }

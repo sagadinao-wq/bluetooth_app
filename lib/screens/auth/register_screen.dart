@@ -1,8 +1,7 @@
-import '../../constants/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../services/auth_service.dart';
 import '../../constants/app_colors.dart';
+import '../../services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -31,6 +30,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  void _registerWithEmail() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final repeatPassword = _repeatPasswordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      _showError("Будь ласка, заповніть усі поля");
+      return;
+    }
+
+    if (password != repeatPassword) {
+      _showError("Паролі не збігаються");
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final user = await _authService.signUpWithEmail(email, password);
+      if (user != null && mounted) {
+        context.go('/home');
+      }
+    } catch (e) {
+      _showError("Помилка реєстрації: $e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   void _loginWithGoogle() async {
     setState(() => _isLoading = true);
     try {
@@ -39,16 +66,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
         context.go('/home');
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: kDarkCardBg,
-            content: Text("Помилка реєстрації через Google: $e", style: const TextStyle(color: Colors.white)),
-          ),
-        );
-      }
+      _showError("Помилка входу через Google (потрібна настройка SHA-1 у Firebase)");
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: kDarkCardBg,
+          content: Text(message, style: const TextStyle(color: Colors.white)),
+        ),
+      );
     }
   }
 
@@ -144,9 +175,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const Center(child: CircularProgressIndicator(color: kPurpleAccent))
                     else ...[
                       ElevatedButton(
-                        onPressed: () {
-                          // Тут буде логіка реєстрації за поштою
-                        },
+                        onPressed: _registerWithEmail,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
@@ -171,8 +200,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const Text("Вже є акаунт? ", style: TextStyle(color: kSubTextColor, fontSize: 13)),
                         GestureDetector(
                           onTap: () {
-                            context.pop(); // Повертаємося або закриваємо
-                            context.push('/login'); // Переходимо на екран входу
+                            context.pop();
+                            context.push('/login');
                           },
                           child: const Text(
                             "Log in",

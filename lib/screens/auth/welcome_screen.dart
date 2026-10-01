@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/auth_service.dart';
-import '../../constants/app_colors.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -156,9 +155,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
 
               const Spacer(),
 
-              // Слайдер цитат
+              // Слайдер цитат зі збільшеним шрифтом
               SizedBox(
-                height: 140,
+                height: 180,
                 child: PageView.builder(
                   controller: _pageController,
                   onPageChanged: (index) => setState(() => _currentPage = index),
@@ -175,16 +174,20 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 22,
+                              fontSize: 26, // Збільшений, яскравий і помітний шрифт заголовка
                               fontWeight: FontWeight.bold,
                               height: 1.25,
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 14),
                           Text(
                             slide["subtitle"]!,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: kSubTextColor, fontSize: 13),
+                            style: const TextStyle(
+                              color: kSubTextColor,
+                              fontSize: 15, // Збільшений підзаголовок для кращої читабельності
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ],
                       ),
@@ -254,7 +257,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                         onPressed: _loginAnonymously,
                         child: const Text(
                           "Продовжити як гість",
-                          style: TextStyle(color: kSubTextColor, fontSize: 13),
+                          style: TextStyle(color: kSubTextColor, fontSize: 14, fontWeight: FontWeight.w600),
                         ),
                       ),
                     const SizedBox(height: 12),

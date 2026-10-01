@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../constants/app_colors.dart';
-import '../../services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -11,7 +11,6 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final _authService = AuthService();
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -47,29 +46,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final user = await _authService.signUpWithEmailAndPassword(email, password);
-      if (user != null && mounted) {
-        context.go('/home');
-      }
-    } catch (e) {
-      _showError("Помилка реєстрації: $e");
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      if (mounted) context.go('/home');
+    } on FirebaseAuthException catch (e) {
+      _showError(e.message ?? "Помилка реєстрації");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _loginWithGoogle() async {
-    setState(() => _isLoading = true);
-    try {
-      final user = await _authService.signInWithGoogle();
-      if (user != null && mounted) {
-        context.go('/home');
-      }
-    } catch (e) {
-      _showError("Помилка входу через Google (потрібна настройка SHA-1 у Firebase)");
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+    _showError("Вхід через Google вимагає налаштування SHA-1 у Firebase");
   }
 
   void _showError(String message) {
@@ -90,7 +80,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Верхня панель із кнопкою Назад
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
@@ -109,7 +98,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ],
               ),
             ),
-
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -134,23 +122,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       style: TextStyle(color: kSubTextColor, fontSize: 13),
                     ),
                     const SizedBox(height: 28),
-
-                    // Поле вводу Username
-                    _buildTextField(
-                      controller: _usernameController,
-                      hint: "Username",
-                    ),
+                    _buildTextField(controller: _usernameController, hint: "Username"),
                     const SizedBox(height: 14),
-
-                    // Поле вводу Email
-                    _buildTextField(
-                      controller: _emailController,
-                      hint: "Email",
-                      keyboardType: TextInputType.emailAddress,
-                    ),
+                    _buildTextField(controller: _emailController, hint: "Email", keyboardType: TextInputType.emailAddress),
                     const SizedBox(height: 14),
-
-                    // Поле вводу Паролю
                     _buildTextField(
                       controller: _passwordController,
                       hint: "Password",
@@ -159,8 +134,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       onTogglePassword: () => setState(() => _obscurePassword = !_obscurePassword),
                     ),
                     const SizedBox(height: 14),
-
-                    // Поле вводу Повтору паролю
                     _buildTextField(
                       controller: _repeatPasswordController,
                       hint: "Repeat Password",
@@ -169,8 +142,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       onTogglePassword: () => setState(() => _obscureRepeatPassword = !_obscureRepeatPassword),
                     ),
                     const SizedBox(height: 24),
-
-                    // Кнопки створення акаунту
                     if (_isLoading)
                       const Center(child: CircularProgressIndicator(color: kPurpleAccent))
                     else ...[
@@ -192,7 +163,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(height: 20),
                       _buildGoogleButton(),
                     ],
-
                     const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -247,11 +217,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           border: InputBorder.none,
           suffixIcon: isPassword
               ? IconButton(
-                  icon: Icon(
-                    obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                    color: Colors.white38,
-                    size: 20,
-                  ),
+                  icon: Icon(obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.white38, size: 20),
                   onPressed: onTogglePassword,
                 )
               : null,
@@ -264,10 +230,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Row(
       children: const [
         Expanded(child: Divider(color: Colors.white12)),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Text("or", style: TextStyle(color: Colors.white38, fontSize: 12)),
-        ),
+        Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text("or", style: TextStyle(color: Colors.white38, fontSize: 12))),
         Expanded(child: Divider(color: Colors.white12)),
       ],
     );
@@ -277,10 +240,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return ElevatedButton.icon(
       onPressed: _loginWithGoogle,
       icon: const Icon(Icons.g_mobiledata_rounded, size: 30, color: Colors.black),
-      label: const Text(
-        "Log in With Google",
-        style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold),
-      ),
+      label: const Text("Log in With Google", style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold)),
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 14),

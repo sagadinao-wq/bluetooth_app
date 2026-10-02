@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/workout_service.dart';
@@ -21,6 +22,51 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   final WorkoutService _workoutService = WorkoutService();
   final BleService _bleService = BleService();
 
+  Timer? _restTimer;
+  int _restSeconds = 0;
+  static const int _defaultRestSeconds = 120;
+
+  void _startRestTimer([int seconds = _defaultRestSeconds]) {
+    _restTimer?.cancel();
+    setState(() => _restSeconds = seconds);
+    _restTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_restSeconds <= 1) {
+        timer.cancel();
+        setState(() => _restSeconds = 0);
+      } else {
+        setState(() => _restSeconds--);
+      }
+    });
+  }
+
+  void _stopRestTimer() {
+    _restTimer?.cancel();
+    if (mounted) setState(() => _restSeconds = 0);
+  }
+
+  String _formatRest() {
+    final m = (_restSeconds ~/ 60).toString().padLeft(2, '0');
+    final s = (_restSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  int _completedSets() {
+    var total = 0;
+    for (final ex in _workoutService.exercises) {
+      total += ex.sets.where((s) => s.isCompleted).length;
+    }
+    return total;
+  }
+
+  int _plannedSets() {
+    var total = 0;
+    for (final ex in _workoutService.exercises) {
+      total += ex.sets.length;
+    }
+    return total;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +79,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   @override
   void dispose() {
+    _restTimer?.cancel();
     _workoutService.removeListener(_onServiceUpdate);
     _bleService.removeListener(_onServiceUpdate);
     super.dispose();
@@ -61,6 +108,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         set.isCompleted = true;
         set.speed = null;
       });
+      _startRestTimer();
     }
   }
 
@@ -70,63 +118,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         builder: (context) => ExerciseAnalysisFullScreen(exerciseName: exerciseName),
       ),
     );
-  }
-
-  void _attemptFinishWorkout() async {
-    final completedSets = _calculateTotalCompletedSets();
-
-    if (completedSets == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.redAccent.withOpacity(0.95),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          content: const Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.white),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  "Виконайте хоча б один підхід, щоб завершити тренування!",
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-      return;
-    }
-
-    await _workoutService.finishWorkout(shouldSave: true);
-    if (mounted) context.go('/home');
-  }
-
-  void _cancelWorkout() async {
-    await _workoutService.finishWorkout(shouldSave: false);
-    if (mounted) context.go('/home');
-  }
-
-  int _calculateTotalCompletedSets() {
-    int total = 0;
-    for (var ex in _workoutService.exercises) {
-      total += ex.sets.where((s) => s.isCompleted).length;
-    }
-    return total;
-  }
-
-  int _calculateTotalVolume() {
-    int total = 0;
-    for (var ex in _workoutService.exercises) {
-      for (var set in ex.sets) {
-        if (set.isCompleted) {
-          final w = int.tryParse(set.weight) ?? 0;
-          final r = int.tryParse(set.reps) ?? 0;
-          total += w * r;
-        }
-      }
-    }
-    return total;
   }
 
   @override
@@ -142,12 +133,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               child: _workoutService.exercises.isEmpty
                   ? _buildEmptyState()
                   : ListView.builder(
-                      padding: EdgeInsets.zero, // Без відступів для повноекранних карток
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       itemCount: _workoutService.exercises.length + 1,
                       itemBuilder: (context, index) {
                         if (index == _workoutService.exercises.length) {
                           return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
                             child: _buildAddExerciseButton(),
                           );
                         }
@@ -162,8 +153,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Widget _buildTopHeader() {
-    final hasCompletedSets = _calculateTotalCompletedSets() > 0;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
@@ -173,13 +162,23 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             onPressed: () => context.go('/home'),
             icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 32),
           ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: const [
+                Text("ТРЕНУВАННЯ", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+                SizedBox(height: 2),
+                Text("ACTIVE SESSION", style: TextStyle(color: kSubTextColor, fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 1.0)),
+              ],
+            ),
+          ),
           GestureDetector(
             onTap: () => context.go('/device'),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: kDarkCardBg,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: _bleService.isConnected
                       ? const Color(0xFF10B981).withOpacity(0.4)
@@ -199,34 +198,32 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   const SizedBox(width: 8),
                   Text(
                     _bleService.isConnected ? "Підключено" : "Датчик відключено",
-                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
             ),
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 28),
+            icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 24),
             color: kDarkCardBg,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            onSelected: (value) {
-              if (value == 'save') _attemptFinishWorkout();
-              if (value == 'cancel') _cancelWorkout();
+            onSelected: (value) async {
+              if (value == 'save') {
+                await _workoutService.finishWorkout(shouldSave: true);
+                if (context.mounted) context.go('/home');
+              } else if (value == 'cancel') {
+                await _workoutService.finishWorkout(shouldSave: false);
+                if (context.mounted) context.go('/home');
+              }
             },
             itemBuilder: (context) => [
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: 'save',
                 child: Row(
                   children: [
-                    Icon(Icons.stop_circle_outlined, color: hasCompletedSets ? Colors.redAccent : Colors.white38),
-                    const SizedBox(width: 12),
-                    Text(
-                      "Завершити тренування",
-                      style: TextStyle(
-                        color: hasCompletedSets ? Colors.white : Colors.white38,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    Icon(Icons.check_circle_outline_rounded, color: Colors.greenAccent),
+                    SizedBox(width: 8),
+                    Text("Зберегти тренування", style: TextStyle(color: Colors.white)),
                   ],
                 ),
               ),
@@ -234,9 +231,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 value: 'cancel',
                 child: Row(
                   children: [
-                    Icon(Icons.delete_outline_rounded, color: Colors.white54),
-                    SizedBox(width: 12),
-                    Text("Скасувати (без збереження)", style: TextStyle(color: Colors.white54)),
+                    Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                    SizedBox(width: 8),
+                    Text("Скасувати тренування", style: TextStyle(color: Colors.redAccent)),
                   ],
                 ),
               ),
@@ -248,37 +245,123 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Widget _buildWorkoutStatsHeader() {
+    final completed = _completedSets();
+    final planned = _plannedSets();
+    final progress = planned == 0 ? 0.0 : (completed / planned).clamp(0.0, 1.0);
+
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kDarkCardBg,
-        border: Border.symmetric(
-          horizontal: BorderSide(color: Colors.white.withOpacity(0.05)),
+        gradient: LinearGradient(
+          colors: [kDarkCardBg, const Color(0xFF1B1728)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      child: Column(
         children: [
-          _statItem("Тривалість", _workoutService.formattedTime, isTimer: true),
-          _statItem("Обсяг", "${_calculateTotalVolume()} kg"),
-          _statItem("Підходи", "${_calculateTotalCompletedSets()}"),
+          Row(
+            children: [
+              Expanded(child: _statItem("ЧАС", _workoutService.formattedTime, isTimer: true)),
+              _verticalDivider(),
+              Expanded(child: _statItem("ОБСЯГ", "${_calculateTotalVolume()} kg")),
+              _verticalDivider(),
+              Expanded(child: _statItem("ПІДХОДИ", "$completed/$planned")),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 7,
+                    backgroundColor: Colors.white.withOpacity(0.07),
+                    valueColor: const AlwaysStoppedAnimation<Color>(kPurpleAccent),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                "${(progress * 100).round()}%",
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          if (_restSeconds > 0) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: _stopRestTimer,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: kPurpleAccent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: kPurpleAccent.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.timer_outlined, color: kPurpleAccent, size: 17),
+                    const SizedBox(width: 7),
+                    Text("Відпочинок  ${_formatRest()}",
+                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 7),
+                    const Text("СКАСУВАТИ",
+                        style: TextStyle(color: kSubTextColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Widget _verticalDivider() => Container(
+        width: 1,
+        height: 28,
+        color: Colors.white.withOpacity(0.07),
+      );
+
+  int _calculateTotalSets() {
+    int total = 0;
+    for (var ex in _workoutService.exercises) {
+      total += ex.sets.length;
+    }
+    return total;
+  }
+
+  int _calculateTotalVolume() {
+    int total = 0;
+    for (var ex in _workoutService.exercises) {
+      for (var set in ex.sets) {
+        if (set.isCompleted) {
+          final w = int.tryParse(set.weight) ?? 0;
+          final r = int.tryParse(set.reps) ?? 0;
+          total += w * r;
+        }
+      }
+    }
+    return total;
   }
 
   Widget _statItem(String label, String value, {bool isTimer = false}) {
     return Column(
       children: [
         Text(label, style: const TextStyle(color: kSubTextColor, fontSize: 12)),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         Text(
           value,
           style: TextStyle(
             color: isTimer ? kPurpleAccent : Colors.white,
-            fontSize: 18,
+            fontSize: 16,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -292,18 +375,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       child: Column(
         children: [
           const Spacer(),
-          Icon(Icons.fitness_center_rounded, color: kSubTextColor.withOpacity(0.3), size: 80),
+          Icon(
+            Icons.fitness_center_rounded,
+            color: kSubTextColor.withOpacity(0.6),
+            size: 80,
+          ),
           const SizedBox(height: 16),
-          const Text("Тренування порожнє", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
           const Text(
-            "Додайте першу вправу, щоб почати запис підходів та відстежувати обсяг.",
-            textAlign: TextAlign.center,
-            style: TextStyle(color: kSubTextColor, fontSize: 14),
+            "Немає доданих вправ",
+            style: TextStyle(color: kSubTextColor, fontSize: 16, fontWeight: FontWeight.w500),
           ),
           const Spacer(),
           _buildAddExerciseButton(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -312,17 +396,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Widget _buildAddExerciseButton() {
     return SizedBox(
       width: double.infinity,
-      child: TextButton.icon(
-        onPressed: () => _showExerciseSelectionModal(),
-        icon: const Icon(Icons.add_circle_outline_rounded, color: kPurpleAccent),
-        label: const Text("Додати вправу", style: TextStyle(color: kPurpleAccent, fontSize: 16, fontWeight: FontWeight.bold)),
-        style: TextButton.styleFrom(
+      child: ElevatedButton(
+        onPressed: _showExerciseSelectionModal,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          backgroundColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: kPurpleAccent.withOpacity(0.3)),
-          ),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        child: const Text(
+          "Додати вправу",
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -334,45 +419,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
     return Dismissible(
       key: ValueKey("exercise_${exercise.name}_$index"),
-      direction: isExpanded ? DismissDirection.none : DismissDirection.horizontal,
+      direction: isExpanded ? DismissDirection.none : DismissDirection.endToStart,
       background: Container(
-        padding: const EdgeInsets.only(left: 24),
-        decoration: const BoxDecoration(color: Colors.blueAccent),
-        alignment: Alignment.centerLeft,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.swap_horiz_rounded, color: Colors.white, size: 28),
-            SizedBox(height: 4),
-            Text("Замінити", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-          ],
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Colors.redAccent.withOpacity(0.85),
+          borderRadius: BorderRadius.circular(18),
         ),
-      ),
-      secondaryBackground: Container(
-        padding: const EdgeInsets.only(right: 24),
-        decoration: const BoxDecoration(color: Colors.redAccent),
         alignment: Alignment.centerRight,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.delete_outline_rounded, color: Colors.white, size: 28),
-            SizedBox(height: 4),
-            Text("Видалити", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-          ],
-        ),
+        child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 28),
       ),
-      confirmDismiss: (direction) async {
-        if (direction == DismissDirection.startToEnd) {
-          _showExerciseSelectionModal(replaceIndex: index);
-          return false;
-        } else {
-          return true;
-        }
-      },
       onDismissed: (direction) {
-        if (direction == DismissDirection.endToStart) {
-          _workoutService.removeExercise(index);
-        }
+        _workoutService.removeExercise(index);
       },
       child: _buildExerciseCard(index),
     );
@@ -380,27 +439,28 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Widget _buildExerciseCard(int index) {
     final exercise = _workoutService.exercises[index];
-    final hasCompletedSets = exercise.sets.any((s) => s.isCompleted);
+    final completedSets = exercise.sets.where((s) => s.isCompleted).length;
+    final bool hasCompletedSets = completedSets > 0;
 
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: kDarkCardBg,
-        border: Border.symmetric(
-          horizontal: BorderSide(color: Colors.white.withOpacity(0.05)),
-        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
       ),
       child: Column(
         children: [
           InkWell(
             onTap: () => _workoutService.toggleExerciseExpanded(index),
+            borderRadius: BorderRadius.circular(18),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
                       color: kPurpleAccent.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
@@ -409,64 +469,84 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      exercise.name,
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            exercise.name,
+                            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (hasCompletedSets) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => _openExerciseAnalysis(exercise.name),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: kPurpleAccent.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: kPurpleAccent.withOpacity(0.5)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text("📈", style: TextStyle(fontSize: 12)),
+                                  SizedBox(width: 4),
+                                  Text("Аналіз", style: TextStyle(color: kPurpleAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  if (hasCompletedSets && exercise.isExpanded) ...[
-                    GestureDetector(
-                      onTap: () => _openExerciseAnalysis(exercise.name),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: kPurpleAccent.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.show_chart_rounded, color: kPurpleAccent, size: 14),
-                            SizedBox(width: 4),
-                            Text("Аналіз", style: TextStyle(color: kPurpleAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
                   Icon(
                     exercise.isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white54,
+                    color: kSubTextColor,
                   ),
                 ],
               ),
             ),
           ),
-          
+
           if (exercise.isExpanded) ...[
             const Divider(color: Colors.white10, height: 1),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
                   if (exercise.sets.isNotEmpty)
                     const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       child: Row(
                         children: [
-                          SizedBox(width: 40, child: Text("SET", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold))),
+                          SizedBox(width: 30, child: Text("SET", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold))),
                           Expanded(child: Center(child: Text("KG", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
                           Expanded(child: Center(child: Text("REPS", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
-                          SizedBox(width: 48),
+                          SizedBox(width: 50),
                         ],
                       ),
                     ),
-                  
+
                   ...exercise.sets.map((set) => _buildSetRow(exercise.name, set)),
-                  
+
                   const SizedBox(height: 12),
-                  
+
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => _startRestTimer(),
+                      icon: const Icon(Icons.timer_outlined, size: 17),
+                      label: const Text("Запустити відпочинок"),
+                      style: TextButton.styleFrom(
+                        foregroundColor: kPurpleAccent,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                    ),
+                  ),
                   Row(
                     children: [
                       Expanded(
@@ -480,7 +560,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                       Expanded(
                         child: HoldButton(
                           icon: Icons.add_rounded,
-                          fillColor: kDarkCardBg,
+                          fillColor: Colors.greenAccent.withOpacity(0.8),
                           onTrigger: () => _workoutService.addSet(index),
                         ),
                       ),
@@ -498,78 +578,111 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Widget _buildSetRow(String exerciseName, WorkoutSetData set) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: set.isCompleted ? const Color(0xFF24D086).withOpacity(0.1) : kDarkBg,
+        color: set.isCompleted ? kPurpleAccent.withOpacity(0.12) : kDarkBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: set.isCompleted ? const Color(0xFF24D086).withOpacity(0.3) : Colors.transparent,
-        ),
+        border: set.isCompleted ? Border.all(color: kPurpleAccent.withOpacity(0.3)) : null,
       ),
       child: Row(
         children: [
           SizedBox(
-            width: 40,
+            width: 30,
+            child: Text(
+              "${set.setNumber}",
+              style: TextStyle(color: set.isWarmup ? Colors.orangeAccent : Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
             child: Center(
               child: Text(
-                set.isWarmup ? "W" : "${set.setNumber}",
-                style: TextStyle(
-                  color: set.isWarmup ? Colors.amber : (set.isCompleted ? const Color(0xFF24D086) : Colors.white),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
+                set.weight,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: Text(
+                set.reps,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!set.isCompleted) ...[
+                GestureDetector(
+                  onTap: () => _startSetFlow(exerciseName, set),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: kDarkCardBg,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.play_arrow_rounded, color: Colors.white, size: 16),
+                        SizedBox(width: 2),
+                        Icon(Icons.chevron_right_rounded, color: kSubTextColor, size: 16),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: Center(
-              child: Text(
-                set.weight.isEmpty ? "-" : set.weight,
-                style: TextStyle(color: set.isCompleted ? Colors.white : Colors.white70, fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-          ),
-          Expanded(
-            child: Center(
-              child: Text(
-                set.reps.isEmpty ? "-" : set.reps,
-                style: TextStyle(color: set.isCompleted ? Colors.white : Colors.white70, fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: () {
-              if (set.isCompleted) {
-                setState(() => set.isCompleted = false);
-              } else {
-                _startSetFlow(exerciseName, set);
-              }
-            },
-            child: Container(
-              width: 48,
-              height: 36,
-              margin: const EdgeInsets.only(right: 4),
-              decoration: BoxDecoration(
-                color: set.isCompleted ? const Color(0xFF24D086) : Colors.white.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Icon(
-                set.isCompleted ? Icons.check_rounded : Icons.play_arrow_rounded,
-                color: set.isCompleted ? Colors.white : Colors.white54,
-                size: 20,
-              ),
-            ),
+              ] else ...[
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      set.isCompleted = false;
+                    });
+                  },
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),
     );
   }
 
-  void _showExerciseSelectionModal({int? replaceIndex}) {
+  void _showExerciseSelectionModal() {
     final availableExercises = [
       'Жим штанги лежачи',
+      'Жим гантелей лежачи',
+      'Жим над головою',
+      'Бруси',
       'Присідання зі штангою',
+      'Жим ногами',
+      'Розгинання ніг',
+      'Згинання ніг',
       'Станова тяга',
+      'Румунська тяга',
+      'Підтягування',
+      'Тяга верхнього блока',
+      'Тяга горизонтального блока',
+      'Тяга штанги в нахилі',
+      'Підйом гантелей в сторони',
+      'Згинання рук з гантелями',
+      'Молотки',
+      'Розгинання рук на блоці',
+      'Підйоми на носки',
+      'Гіперекстензія',
+      'Прес',
     ];
 
     showModalBottomSheet(
@@ -577,34 +690,83 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       backgroundColor: kDarkCardBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                replaceIndex != null ? "Замінити на:" : "Оберіть вправу", 
-                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)
-              ),
-              const SizedBox(height: 16),
-              ...availableExercises.map((name) => ListTile(
-                title: Text(name, style: const TextStyle(color: Colors.white)),
-                trailing: Icon(
-                  replaceIndex != null ? Icons.swap_horiz_rounded : Icons.add_circle_outline_rounded, 
-                  color: replaceIndex != null ? Colors.blueAccent : kPurpleAccent
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 38, height: 4,
+                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4)),
+                  ),
                 ),
-                onTap: () {
-                  if (replaceIndex != null) {
-                    _workoutService.removeExercise(replaceIndex);
-                    _workoutService.addExercise(name);
-                  } else {
-                    _workoutService.addExercise(name);
-                  }
-                  Navigator.of(context).pop();
-                },
-              )),
-            ],
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text("Додати вправу",
+                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: kPurpleAccent.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text("${availableExercises.length} вправ",
+                          style: const TextStyle(color: kPurpleAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: kDarkBg,
+                    borderRadius: BorderRadius.circular(13),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.search_rounded, color: kSubTextColor, size: 20),
+                      SizedBox(width: 8),
+                      Text("Пошук вправи", style: TextStyle(color: kSubTextColor, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: availableExercises.length,
+                    separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                    itemBuilder: (_, i) {
+                      final name = availableExercises[i];
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 2),
+                        leading: Container(
+                          width: 38, height: 38,
+                          decoration: BoxDecoration(
+                            color: kPurpleAccent.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.fitness_center_rounded, color: kPurpleAccent, size: 18),
+                        ),
+                        title: Text(name, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                        trailing: const Icon(Icons.add_circle_outline_rounded, color: kPurpleAccent),
+                        onTap: () {
+                          _workoutService.addExercise(name);
+                          Navigator.of(context).pop();
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -612,6 +774,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 }
 
+// Новий повноекранний режим аналізу з темним градієнтом та червоним круглим хрестиком
 class ExerciseAnalysisFullScreen extends StatelessWidget {
   final String exerciseName;
 
@@ -623,7 +786,11 @@ class ExerciseAnalysisFullScreen extends StatelessWidget {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF120C24), kDarkBg, Color(0xFF16161E)],
+            colors: [
+              Color(0xFF120C24),
+              kDarkBg,
+              Color(0xFF16161E),
+            ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -631,6 +798,7 @@ class ExerciseAnalysisFullScreen extends StatelessWidget {
         child: SafeArea(
           child: Column(
             children: [
+              // Шапка: Назва вправи та виділена червона кнопка закриття
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 child: Row(
@@ -639,9 +807,15 @@ class ExerciseAnalysisFullScreen extends StatelessWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text("Аналіз вправи", style: TextStyle(color: kSubTextColor, fontSize: 12, fontWeight: FontWeight.w500)),
+                        const Text(
+                          "Аналіз вправи",
+                          style: TextStyle(color: kSubTextColor, fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
                         const SizedBox(height: 2),
-                        Text(exerciseName, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                        Text(
+                          exerciseName,
+                          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
                       ],
                     ),
                     GestureDetector(
@@ -652,7 +826,12 @@ class ExerciseAnalysisFullScreen extends StatelessWidget {
                           color: Colors.redAccent.withOpacity(0.2),
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.redAccent, width: 1.5),
-                          boxShadow: [BoxShadow(color: Colors.redAccent.withOpacity(0.3), blurRadius: 8)],
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.redAccent.withOpacity(0.3),
+                              blurRadius: 8,
+                            )
+                          ],
                         ),
                         child: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 22),
                       ),
@@ -661,6 +840,8 @@ class ExerciseAnalysisFullScreen extends StatelessWidget {
                 ),
               ),
               const Divider(color: Colors.white10, height: 1),
+
+              // Повноекранний скрол під майбутній обсяг аналітичних даних
               Expanded(
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
@@ -678,13 +859,17 @@ class ExerciseAnalysisFullScreen extends StatelessWidget {
                         child: const Text("📈", style: TextStyle(fontSize: 50)),
                       ),
                       const SizedBox(height: 24),
-                      const Text("Детальна аналітика вправи", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                      const Text(
+                        "Детальна аналітика вправи",
+                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
                       const SizedBox(height: 10),
                       const Text(
                         "Тут відображатимуться графіки швидкості (V_mean / V_peak), втрата швидкості (Velocity Loss) та динаміка втоми за підходами.",
                         textAlign: TextAlign.center,
                         style: TextStyle(color: kSubTextColor, fontSize: 14, height: 1.4),
                       ),
+                      const SizedBox(height: 300), // Запас для вертикального скролу
                     ],
                   ),
                 ),

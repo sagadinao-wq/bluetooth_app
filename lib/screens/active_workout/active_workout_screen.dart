@@ -276,7 +276,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         children: [
           _statItem("Тривалість", _workoutService.formattedTime, isTimer: true),
           _statItem("Обсяг", "${_calculateTotalVolume()} kg"),
-          _statItem("Підходи", "${_calculateTotalCompletedSets()}"), // Відображаємо тільки ВИКОНАНІ
+          _statItem("Підходи", "${_calculateTotalCompletedSets()}"),
         ],
       ),
     );
@@ -346,19 +346,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final isExpanded = exercise.isExpanded;
 
     return Dismissible(
-      // Ключ має бути унікальним
       key: ValueKey("exercise_${exercise.name}_$index"),
-      // Свайпи працюють ТІЛЬКИ коли картка згорнута
       direction: isExpanded ? DismissDirection.none : DismissDirection.horizontal,
       background: _buildSwipeBackground(Icons.swap_horiz_rounded, Colors.blueAccent, Alignment.centerLeft, "Замінити"),
       secondaryBackground: _buildSwipeBackground(Icons.delete_outline_rounded, Colors.redAccent, Alignment.centerRight, "Видалити"),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
-          // Свайп зліва направо -> Заміна
           _showExerciseSelectionModal(replaceIndex: index);
-          return false; // Не видаляємо, а просто відкриваємо меню заміни
+          return false;
         } else {
-          // Свайп справа наліво -> Видалення
           return true;
         }
       },
@@ -401,7 +397,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       ),
       child: Column(
         children: [
-          // Шапка картки (згортання/розгортання)
           InkWell(
             onTap: () => _workoutService.toggleExerciseExpanded(index),
             borderRadius: BorderRadius.circular(16),
@@ -454,7 +449,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
           
-          // Тіло картки (таблиця підходів)
           if (exercise.isExpanded) ...[
             const Divider(color: Colors.white10, height: 1),
             Padding(
@@ -469,7 +463,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                           SizedBox(width: 40, child: Text("SET", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold))),
                           Expanded(child: Center(child: Text("KG", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
                           Expanded(child: Center(child: Text("REPS", style: TextStyle(color: kSubTextColor, fontSize: 11, fontWeight: FontWeight.bold)))),
-                          SizedBox(width: 48), // Місце для кнопки Play/Check
+                          SizedBox(width: 48),
                         ],
                       ),
                     ),
@@ -478,7 +472,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   
                   const SizedBox(height: 12),
                   
-                  // Кнопки + / -
                   Row(
                     children: [
                       Expanded(
@@ -520,7 +513,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       ),
       child: Row(
         children: [
-          // Номер підходу або W
           SizedBox(
             width: 40,
             child: Center(
@@ -535,7 +527,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
           
-          // Вага
           Expanded(
             child: Center(
               child: Text(
@@ -545,7 +536,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
           
-          // Повторення
           Expanded(
             child: Center(
               child: Text(
@@ -555,14 +545,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
           
-          // Кнопка (Play для старту, Check для виконаного)
           GestureDetector(
             onTap: () {
               if (set.isCompleted) {
-                // Скасувати виконання
                 setState(() => set.isCompleted = false);
               } else {
-                // Запустити екран підготовки
                 _startSetFlow(exerciseName, set);
               }
             },
@@ -591,7 +578,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       'Жим штанги лежачи',
       'Присідання зі штангою',
       'Станова тяга',
-      'Підтягування',
     ];
 
     showModalBottomSheet(
@@ -618,12 +604,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 ),
                 onTap: () {
                   if (replaceIndex != null) {
-                    // Якщо в тебе в WorkoutService немає методу replaceExercise, 
-                    // ми просто видаляємо стару і вставляємо нову (або змінюємо ім'я).
-                    // Для безпеки просто змінимо ім'я поточної:
-                    setState(() {
-                      _workoutService.exercises[replaceIndex].name = name;
-                    });
+                    _workoutService.removeExercise(replaceIndex);
+                    _workoutService.addExercise(name);
                   } else {
                     _workoutService.addExercise(name);
                   }
@@ -638,7 +620,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 }
 
-// Повноекранний режим аналізу
 class ExerciseAnalysisFullScreen extends StatelessWidget {
   final String exerciseName;
 

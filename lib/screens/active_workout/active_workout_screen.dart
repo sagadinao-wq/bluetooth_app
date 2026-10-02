@@ -42,8 +42,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (mounted) setState(() {});
   }
 
-  // --- ЛОГІКА ДІЙ ---
-
   void _startSetFlow(String exerciseName, WorkoutSetData set) async {
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
@@ -61,7 +59,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         set.reps = result['reps'] ?? 'AUTO';
         set.isWarmup = result['isWarmup'] ?? false;
         set.isCompleted = true;
-        set.speed = null; // Очищуємо швидкість до отримання даних з датчика
+        set.speed = null;
       });
     }
   }
@@ -78,7 +76,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final completedSets = _calculateTotalCompletedSets();
 
     if (completedSets == 0) {
-      // Захист від порожнього тренування
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.redAccent.withOpacity(0.95),
@@ -101,7 +98,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return;
     }
 
-    // Якщо все ок - зберігаємо і виходимо
     await _workoutService.finishWorkout(shouldSave: true);
     if (mounted) context.go('/home');
   }
@@ -110,8 +106,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _workoutService.finishWorkout(shouldSave: false);
     if (mounted) context.go('/home');
   }
-
-  // --- ПІДРАХУНКИ ---
 
   int _calculateTotalCompletedSets() {
     int total = 0;
@@ -135,8 +129,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     return total;
   }
 
-  // --- ВІДЖЕТИ ---
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -150,12 +142,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               child: _workoutService.exercises.isEmpty
                   ? _buildEmptyState()
                   : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: EdgeInsets.zero, // Без відступів для повноекранних карток
                       itemCount: _workoutService.exercises.length + 1,
                       itemBuilder: (context, index) {
                         if (index == _workoutService.exercises.length) {
                           return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                             child: _buildAddExerciseButton(),
                           );
                         }
@@ -181,8 +173,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             onPressed: () => context.go('/home'),
             icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 32),
           ),
-          
-          // Статус датчика
           GestureDetector(
             onTap: () => context.go('/device'),
             child: Container(
@@ -215,8 +205,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ),
             ),
           ),
-
-          // Меню завершення
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 28),
             color: kDarkCardBg,
@@ -230,10 +218,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 value: 'save',
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.stop_circle_outlined,
-                      color: hasCompletedSets ? Colors.redAccent : Colors.white38,
-                    ),
+                    Icon(Icons.stop_circle_outlined, color: hasCompletedSets ? Colors.redAccent : Colors.white38),
                     const SizedBox(width: 12),
                     Text(
                       "Завершити тренування",
@@ -264,12 +249,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Widget _buildWorkoutStatsHeader() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: BoxDecoration(
         color: kDarkCardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.symmetric(
+          horizontal: BorderSide(color: Colors.white.withOpacity(0.05)),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -348,8 +335,32 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     return Dismissible(
       key: ValueKey("exercise_${exercise.name}_$index"),
       direction: isExpanded ? DismissDirection.none : DismissDirection.horizontal,
-      background: _buildSwipeBackground(Icons.swap_horiz_rounded, Colors.blueAccent, Alignment.centerLeft, "Замінити"),
-      secondaryBackground: _buildSwipeBackground(Icons.delete_outline_rounded, Colors.redAccent, Alignment.centerRight, "Видалити"),
+      background: Container(
+        padding: const EdgeInsets.only(left: 24),
+        decoration: const BoxDecoration(color: Colors.blueAccent),
+        alignment: Alignment.centerLeft,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(Icons.swap_horiz_rounded, color: Colors.white, size: 28),
+            SizedBox(height: 4),
+            Text("Замінити", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+      secondaryBackground: Container(
+        padding: const EdgeInsets.only(right: 24),
+        decoration: const BoxDecoration(color: Colors.redAccent),
+        alignment: Alignment.centerRight,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(Icons.delete_outline_rounded, color: Colors.white, size: 28),
+            SizedBox(height: 4),
+            Text("Видалити", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
           _showExerciseSelectionModal(replaceIndex: index);
@@ -367,41 +378,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
-  Widget _buildSwipeBackground(IconData icon, Color color, Alignment alignment, String text) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(16)),
-      alignment: alignment,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: Colors.white, size: 28),
-          const SizedBox(height: 4),
-          Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildExerciseCard(int index) {
     final exercise = _workoutService.exercises[index];
     final hasCompletedSets = exercise.sets.any((s) => s.isCompleted);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
         color: kDarkCardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.symmetric(
+          horizontal: BorderSide(color: Colors.white.withOpacity(0.05)),
+        ),
       ),
       child: Column(
         children: [
           InkWell(
             onTap: () => _workoutService.toggleExerciseExpanded(index),
-            borderRadius: BorderRadius.circular(16),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
                   Container(
@@ -526,7 +521,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ),
             ),
           ),
-          
           Expanded(
             child: Center(
               child: Text(
@@ -535,7 +529,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ),
             ),
           ),
-          
           Expanded(
             child: Center(
               child: Text(
@@ -544,7 +537,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ),
             ),
           ),
-          
           GestureDetector(
             onTap: () {
               if (set.isCompleted) {
